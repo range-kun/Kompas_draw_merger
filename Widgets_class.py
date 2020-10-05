@@ -93,7 +93,7 @@ class MakeWidgets(QtWidgets.QMainWindow):
 
     def addMenuItems(self, pulldown, items):
         for item in items:
-            command=QtWidgets.QAction(item[0],self)
+            command = QtWidgets.QAction(item[0],self)
             command.triggered.connect(item[1])
             pulldown.addAction(command)
 

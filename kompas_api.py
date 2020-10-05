@@ -60,6 +60,7 @@ def filter_by_date(files, date_1, date_2):
                 continue
             if date_in_stamp in range(date_1_in_seconds, date_2_in_seconds+1):
                 draw_list.append(file)
+        doc.Close(const.kdDoNotSaveChanges)
     return draw_list
 
 def date_to_seconds(date_string):
@@ -69,6 +70,10 @@ def date_to_seconds(date_string):
         date_string = '.'.join(new_date)
         struct_date = time.strptime(date_string, "%d.%m.%Y")
     return time.mktime(struct_date)
+
+def exit_kompas():
+    if kompas_object.Visible == False:  # если компас в невидимом режиме
+        kompas_object.Quit()  # закрываем компас
 
 
 

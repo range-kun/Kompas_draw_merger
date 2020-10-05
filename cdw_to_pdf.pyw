@@ -52,7 +52,6 @@ class Ui_Merger(MakeWidgets):
         self.gridLayout.addWidget(self.pushButton_4, 12, 3, 1, 1)
 
         self.pushButton_5 = self.make_button(text="Склеить файлы", font=font, command=self.merge_files_in_one)
-        self.pushButton_5.setEnabled(False)
         self.gridLayout.addWidget(self.pushButton_5, 16, 0, 1, 4)
 
         self.pushButton_6 = self.make_button(text="Выбор стартовой папки", font=font, command=self.choose_initial_folder)
@@ -101,6 +100,7 @@ class Ui_Merger(MakeWidgets):
         self.dateEdit.setEnabled(self.checkBox.isChecked())
         self.dateEdit_2.setEnabled(self.checkBox.isChecked())
 
+
     def choose_initial_folder(self):
         self.directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
         draw_list = []
@@ -108,7 +108,7 @@ class Ui_Merger(MakeWidgets):
             self.listWidget.clear()
             if self.checkBox_4.isChecked():
                 for (this_dir, _, files_here) in os.walk(self.directory):
-                    if not this_dir.endswith('Былое') and 'Проработка' not in this_dir:
+                    if 'Былое' not in this_dir and 'Проработка' not in this_dir:
                         files = self.get_files_in_folder(this_dir)
                         draw_list += files
             else:
@@ -134,20 +134,21 @@ class Ui_Merger(MakeWidgets):
     def merge_files_in_one(self):
         files = [str(self.listWidget.item(i).text()) for i
                          in range(self.listWidget.count()) if self.listWidget.item(i).checkState()]
-        directory_pdf = self.create_folders()
         if self.checkBox.isChecked():
             files = self.filter_files(files)
+        if not files:
+            self.error('Нету файлов для сливания')
+            return
+        directory_pdf,  base_pdf_dir = self.create_folders()
         kompas_api.cdw_to_pdf(files, directory_pdf)
         pdf_file = self.merge_pdf(directory_pdf)
         if self.checkBox_3.isChecked():
             shutil.rmtree(directory_pdf)
+        os.system(f'explorer "{os.path.normpath(base_pdf_dir)}"')
         os.startfile(pdf_file)
 
     def create_folders(self):
-        main_name = [os.path.splitext(i)[0] for i in os.listdir(self.directory) if os.path.splitext(i)[1] == '.cdw'][0]
-        if not main_name:
-            main_name = \
-            [os.path.splitext(i)[0] for i in os.listdir(self.directory) if os.path.splitext(i)[1] == '.spw'][0]
+        main_name = os.path.basename(self.directory)
         base_pdf_dir = f'{self.directory}\pdf'
         pdf_file = r'%s\pdf\%s - 01 %s.pdf' % (self.directory, main_name, time.strftime("%d.%m.%Y"))
         directory_pdf = os.path.splitext(pdf_file)[0]
@@ -163,7 +164,7 @@ class Ui_Merger(MakeWidgets):
             today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
             directory_pdf = r'%s\pdf\%s - %s %s' % (self.directory, main_name, today_update, time.strftime("%d.%m.%Y"))
         os.makedirs(directory_pdf)
-        return directory_pdf
+        return directory_pdf, base_pdf_dir
 
     def merge_pdf(self, directory):
         # Получаем список файлов в переменную files
@@ -185,7 +186,6 @@ class Ui_Merger(MakeWidgets):
         self.directory = None
         self.label.setText("Выберите папку с файлами \n в формате .cdw или .spw")
         self.listWidget.clear()
-        self.pushButton_5.setEnabled(False)
 
     def select_all(self):
         files = (self.listWidget.item(i) for i
@@ -204,7 +204,7 @@ class Ui_Merger(MakeWidgets):
     def add_file_to_list(self):
         filename = [QtWidgets.QFileDialog.getOpenFileName(self, "Выбрать файл", ".",
                                                          "Чертж(*.cdw);;Спецификация(*.spw)")[0]]
-        if filename:
+        if filename[0]:
             self.fill_list(filename)
 
     def add_folder_to_list(self):
@@ -220,4 +220,8 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     merger = Ui_Merger()
     merger.show()
-    sys.exit(app.exec_())
+    try:
+        sys.exit(app.exec_())
+    except:
+        kompas_api.exit_kompas()
+        sys.exit(app.exec_())
