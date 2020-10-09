@@ -9,6 +9,7 @@ import time
 
 def get_kompas_api7():
     module = gencache.EnsureModule("{69AC2981-37C0-4379-84FD-5DD2F3C0A520}", 0, 1, 0)
+    pythoncom.CoInitializeEx(0)
     api = module.IApplication(
         Dispatch("Kompas.Application.7")._oleobj_.QueryInterface(module.IKompasAPIObject.CLSID,
                                                                  pythoncom.IID_IDispatch))
@@ -23,14 +24,29 @@ def get_kompas_api5():
     const = gencache.EnsureModule("{75C9F5D0-B5B8-4526-8681-9903C567D2ED}", 0, 1, 0)
     return module, api, const.constants
 
-kompas_api7_module, application, const = get_kompas_api7()
-kompas6_api5_module, kompas_object, kompas6_constants = get_kompas_api5()
-app = application.Application
-docs = app.Documents
-iConverter = application.Converter(kompas_object.ksSystemPath(5) + "\Pdf2d.dll")
+
+def set_converter(app, kompas_object):
+    iConverter = app.Converter(kompas_object.ksSystemPath(5) + "\Pdf2d.dll")  # интерфейс для сохранения в PDF
+    converter_parameters_module = gencache.EnsureModule("{31EBF650-BD38-43EC-892B-1F8AC6C14430}", 0, 1, 0)
+    converter_parameters = converter_parameters_module.IPdf2dParam \
+        (iConverter.ConverterParameters(0)._oleobj_.QueryInterface
+         (converter_parameters_module.IPdf2dParam.CLSID, pythoncom.IID_IDispatch))
+    converter_parameters.CutByFormat = True  # обрезать по формату
+    converter_parameters.EmbedFonts = True  # встроить шрифты
+    converter_parameters.GrayScale = True  # оттенки серого
+    converter_parameters.MultiPageOutput = True  # сохранять все страницы
+    converter_parameters.MultipleFormat = 1
+    converter_parameters.Resolution = 300  # разрешение ( на векторные пдф ваще не влияет никак)
+    converter_parameters.Scale = 1.0  # масшта
+    return iConverter
+
 
 
 def cdw_to_pdf(files, directory_pdf):
+    kompas_api7_module, application, const = get_kompas_api7()
+    kompas6_api5_module, kompas_object, kompas6_constants = get_kompas_api5()
+    app = application.Application
+    iConverter = set_converter(app, kompas_object)
     number = 0
     for file in files:
         number += 1
@@ -39,6 +55,9 @@ def cdw_to_pdf(files, directory_pdf):
 
 
 def filter_by_date(files, date_1, date_2):
+    kompas_api7_module, application, const = get_kompas_api7()
+    app = application.Application
+    docs = app.Documents
     draw_list = []
     app.HideMessage = const.ksHideMessageNo  # отключаем отображение сообщений Компас, отвечая на всё "нет"
     for file in files:  # структура обработки для каждого документа
@@ -72,6 +91,7 @@ def date_to_seconds(date_string):
     return time.mktime(struct_date)
 
 def exit_kompas():
+    kompas6_api5_module, kompas_object, kompas6_constants = get_kompas_api5()
     if kompas_object.Visible == False:  # если компас в невидимом режиме
         kompas_object.Quit()  # закрываем компас
 

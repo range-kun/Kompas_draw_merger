@@ -9,7 +9,12 @@ from operator import itemgetter
 from Widgets_class import MakeWidgets
 from _datetime import datetime
 from PyQt5 import QtCore, QtGui, QtWidgets
-#from threading import Thread
+from PyQt5.QtCore import QThread, pyqtSignal
+
+
+def except_hook(cls, exception, traceback):
+    sys.__excepthook__(cls, exception, traceback)
+
 
 
 class Ui_Merger(MakeWidgets):
@@ -132,6 +137,7 @@ class Ui_Merger(MakeWidgets):
         return draw_list
 
     def merge_files_in_one(self):
+        self.pushButton_5.setEnabled(False)
         files = [str(self.listWidget.item(i).text()) for i
                          in range(self.listWidget.count()) if self.listWidget.item(i).checkState()]
         if self.checkBox.isChecked():
@@ -140,12 +146,9 @@ class Ui_Merger(MakeWidgets):
             self.error('Нету файлов для сливания')
             return
         directory_pdf,  base_pdf_dir = self.create_folders()
-        kompas_api.cdw_to_pdf(files, directory_pdf)
-        pdf_file = self.merge_pdf(directory_pdf)
-        if self.checkBox_3.isChecked():
-            shutil.rmtree(directory_pdf)
-        os.system(f'explorer "{os.path.normpath(base_pdf_dir)}"')
-        os.startfile(pdf_file)
+        self.thread = MyBrandThread(files, directory_pdf, base_pdf_dir)
+        self.thread.button_enable.connect(self.pushButton_5.setEnabled)
+        self.thread.start()
 
     def create_folders(self):
         main_name = os.path.basename(self.directory)
@@ -166,7 +169,7 @@ class Ui_Merger(MakeWidgets):
         os.makedirs(directory_pdf)
         return directory_pdf, base_pdf_dir
 
-    def merge_pdf(self, directory):
+    def merge_pdf_files(self, directory):
         # Получаем список файлов в переменную files
         files = sorted(os.listdir(directory), key=lambda fil: int(fil.split()[0]))
         merger = PyPDF2.PdfFileMerger()
@@ -215,11 +218,58 @@ class Ui_Merger(MakeWidgets):
         if draw_list:
             self.fill_list(draw_list)
 
+class MyBrandThread(QThread):
+    button_enable = pyqtSignal(bool)
+
+    def __init__(self, files, directory_pdf, base_pdf_dir):
+        self.files = files
+        self.base_pdf_dir = base_pdf_dir
+        self.directory_pdf = directory_pdf
+        QThread.__init__(self) # Лёха, вот здесь просто на родной модуль перешёл, не Thread, а QThread
+
+    def run(self):
+        self.cdw_to_pdf(self.files, self.directory_pdf)
+        pdf_file = self.merge_pdf_files(self.directory_pdf)
+        if merger.checkBox_3.isChecked():
+            shutil.rmtree(self.directory_pdf)
+        os.system(f'explorer "{os.path.normpath(self.base_pdf_dir)}"')
+        os.startfile(pdf_file)
+        self.button_enable.emit(True)
+
+    def cdw_to_pdf(self, files, directory_pdf):
+        kompas_api7_module, application, const = kompas_api.get_kompas_api7()
+        kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
+        app = application.Application
+        iConverter = app.Converter(kompas_object.ksSystemPath(5) + "\Pdf2d.dll")
+        number = 0
+        for file in files:
+            number += 1
+            iConverter.Convert(file, directory_pdf + "\\" +
+                               f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
+
+    def merge_pdf_files(self, directory):
+        # Получаем список файлов в переменную files
+        files = sorted(os.listdir(directory), key=lambda fil: int(fil.split()[0]))
+        merger_pdf = PyPDF2.PdfFileMerger()
+        for filename in files:
+            merger_pdf.append(fileobj=open(os.path.join(directory, filename), 'rb'))
+        if merger.checkBox_2.isChecked():
+            input_pages = sorted([(i, i.pagedata['/MediaBox'][2:]) for i in merger.pages], key=itemgetter(1))
+            merger_pdf.pages = [i[0] for i in input_pages]
+        pdf_file = os.path.join(os.path.dirname(directory), f'{os.path.basename(directory)}.pdf')
+        with open(pdf_file, 'wb') as pdf:
+            merger_pdf.write(pdf)
+        for file in merger_pdf.inputs:
+            file[0].close()
+        return pdf_file
+
+
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     merger = Ui_Merger()
     merger.show()
+    sys.excepthook = except_hook
     try:
         sys.exit(app.exec_())
     except:
