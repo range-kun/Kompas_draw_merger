@@ -1,34 +1,53 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-class MakeWidgets(QtWidgets.QMainWindow):
+class MakeWidgets(QtWidgets.QMainWindow,):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent=None)
 
-    def make_button(self, *, text, command=None, size=None, font=None):
-        button = QtWidgets.QPushButton(self.centralwidget)
+    def make_button(self, *, text, command=None, size=None, font=None, size_policy=None, parent=None):
+        button = QtWidgets.QPushButton(parent or self.centralwidget)
         if size:
             button.setMaximumSize(QtCore.QSize(*size))
         if command:
             button.clicked.connect(command)
         if font:
             button.setFont(font)
+        if size_policy:
+            button.setSizePolicy(size_policy)
         button.setText(text)
         return button
 
-    def make_line_edit(self, text=None, status=None, parent=None):
-        line = QtWidgets.QLineEdit(parent)
+    def make_line_edit(self, *, text=None, status=None, parent=None, font=None):
+        line = QtWidgets.QLineEdit(parent or self.centralwidget)
         line.setStatusTip(status)
+        if font:
+            line.setFont(font)
         line.setPlaceholderText(text)
         return line
 
     @staticmethod
-    def make_plain_text(*, text=None, status=None, parent=None):
+    def make_plain_text(*, text=None, status=None, parent=None, size_policy=None, font=None):
         plain_text = QtWidgets.QPlainTextEdit(parent)
         plain_text.setStatusTip(status)
         plain_text.setPlainText(text)
+        plain_text.setFont(font)
+        if size_policy:
+            plain_text.setSizePolicy(size_policy)
         return plain_text
 
-    def make_line(self, orientation,width=None):
+    def make_text_edit(self, *, text=None, status=None, parent=None,
+                        placeholder=None, size_policy=None, font=None):
+        text_edit = QtWidgets.QTextEdit(parent or self.centralwidget)
+        text_edit.setStatusTip(status)
+        text_edit.setPlainText(text)
+        font.setPointSize(11)
+        text_edit.setFont(font)
+        text_edit.setPlaceholderText(placeholder)
+        if size_policy:
+            text_edit.setSizePolicy(size_policy)
+        return text_edit
+
+    def make_line(self, orientation, width=None):
         line = QtWidgets.QFrame(self.centralwidget)
         if orientation == 'horizontal':
             line.setFrameShape(QtWidgets.QFrame.HLine)
@@ -39,8 +58,8 @@ class MakeWidgets(QtWidgets.QMainWindow):
             line.setMidLineWidth(width)
         return line
 
-    def make_label(self, *, text, font=None):
-        label = QtWidgets.QLabel(text, self.centralwidget)
+    def make_label(self, *, text, font=None, parent=None):
+        label = QtWidgets.QLabel(text, parent or self.centralwidget)
         if not font:
             font = QtGui.QFont()
             font.setFamily("Times New Roman")
@@ -50,8 +69,11 @@ class MakeWidgets(QtWidgets.QMainWindow):
         label.setAlignment(QtCore.Qt.AlignCenter)
         return label
 
-    def make_date(self, *, date_par, status=None, font=None):
-        widget = QtWidgets.QDateEdit(self.centralwidget)
+    def make_date(self, *, date_par, status=None, font=None, parent=None):
+        if parent:
+            widget = QtWidgets.QDateEdit(parent)
+        else:
+            widget = QtWidgets.QDateEdit(self.centralwidget)
         if font:
             widget.setFont(font)
         self.set_date(date_par, widget)
@@ -62,14 +84,16 @@ class MakeWidgets(QtWidgets.QMainWindow):
     def set_date(date_par, widget):
         widget.setDate(QtCore.QDate(*date_par))
 
-    def make_combobox(self,status=None,size=None,list=None):
-        combobox = QtWidgets.QComboBox(self.centralwidget)
+    def make_combobox(self, status=None, size=None, array=None, parent=None, font=None):
+        combobox = QtWidgets.QComboBox(parent or self.centralwidget)
         if size:
             combobox.setMinimumSize(QtCore.QSize(*size))
         if status:
             combobox.setStatusTip(status)
-        if list:
-            self.fill_combo_box(list, combobox)
+        if array:
+            self.fill_combo_box(array, combobox)
+        if font:
+            combobox.setFont(font)
         return combobox
 
     @staticmethod
@@ -101,8 +125,11 @@ class MakeWidgets(QtWidgets.QMainWindow):
         self.error_dialog = QtWidgets.QErrorMessage()
         self.error_dialog.showMessage(message)
 
-    def make_checkbox(self, *, font=None, text=None, activate=False, command=None):
-        widget = QtWidgets.QCheckBox(self.gridLayoutWidget)
+    def make_checkbox(self, *, font=None, text=None, activate=False, command=None, parent=None):
+        if parent:
+            widget = QtWidgets.QCheckBox(parent)
+        else:
+            widget = QtWidgets.QCheckBox(self.gridLayoutWidget)
         if activate:
             widget.setChecked(True)
         if font:
@@ -111,6 +138,15 @@ class MakeWidgets(QtWidgets.QMainWindow):
             widget.clicked.connect(command)
         widget.setText(text)
         return widget
+
+    def make_radio_button(self, *, text, command=None, parent=None, font=None):
+        radio_button = QtWidgets.QRadioButton(text, parent or self.centralwidget)
+        if font:
+            radio_button.setFont(font)
+        if command:
+            radio_button.toggled.connect(command)
+        return radio_button
+
 
     def fill_list(self, draw_list):
         for file in draw_list:
