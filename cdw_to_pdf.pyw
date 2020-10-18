@@ -5,9 +5,10 @@ import time
 import kompas_api
 import PyPDF2
 import shutil
+import fitz
 from operator import itemgetter
 from Widgets_class import MakeWidgets
-from _datetime import datetime
+from settings_window import SettingsWindow
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -15,228 +16,6 @@ from PyQt5.QtCore import QThread, pyqtSignal
 def except_hook(cls, exception, traceback):
     sys.__excepthook__(cls, exception, traceback)
 
-class SettingsWindow(QtWidgets.QWidget):
-    def __init__(self):
-        QtWidgets.QWidget.__init__(self)
-        self.construct_class = MakeWidgets()
-        self.date_today = [int(i) for i in str(datetime.date(datetime.now())).split('-')]
-        self.setupUi(self)
-
-    def setupUi(self, Form):
-        Form.setObjectName("Form")
-        Form.resize(640, 461)
-
-        self.gridLayoutWidget = QtWidgets.QWidget(Form)
-        self.gridLayoutWidget.setGeometry(QtCore.QRect(10, 10, 624, 441))
-        self.gridLayoutWidget.setObjectName("gridLayoutWidget")
-        self.gridLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
-
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(12)
-
-        font_1 = QtGui.QFont()
-        font_1.setFamily("Arial")
-        font_1.setPointSize(11)
-
-        font_2 = QtGui.QFont()
-        font_2.setFamily("MS Shell Dlg 2")
-        font_2.setPointSize(12)
-
-        datePolicy = \
-            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.MinimumExpanding)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored)
-
-        self.checkBox = self.construct_class.make_checkbox(
-            font=font, text='Файлы с датой только за указанный период', command=self.select_date,
-            parent=self.gridLayoutWidget)
-        self.gridLayout.addWidget(self.checkBox, 1, 0, 1, 1)
-
-        self.dateEdit = self.construct_class.make_date(date_par=self.date_today, font=font,
-                                                       parent=self.gridLayoutWidget)
-        self.dateEdit.setEnabled(False)
-        self.gridLayout.addWidget(self.dateEdit, 1, 2, 1, 1)
-
-        self.dateEdit_2 = self.construct_class.make_date(date_par=self.date_today, font=font,
-                                                         parent=self.gridLayoutWidget)
-        self.dateEdit_2.setEnabled(False)
-        self.dateEdit_2.setSizePolicy(datePolicy)
-        self.gridLayout.addWidget(self.dateEdit_2, 1, 1, 1, 1)
-
-
-        self.checkBox_2 = self.construct_class.make_checkbox(
-            font=font, text='С указанной фамилией разработчика', command=self.select_constructor,
-            parent=self.gridLayoutWidget)
-        self.gridLayout.addWidget(self.checkBox_2,  2, 0, 3, 1)
-
-        self.radio_button = self.construct_class.make_radio_button(text='Фамилия из списка', font=font_1,
-                                                                   parent=self.gridLayoutWidget,
-                                                                   command=self.constructor_name_option)
-        self.radio_button.setEnabled(False)
-        self.gridLayout.addWidget(self.radio_button, 2, 1, 1, 1)
-
-        self.radio_button_2 = self.construct_class.make_radio_button(text='Другая', font=font_1,
-                                                                     parent=self.gridLayoutWidget,
-                                                                     command=self.constructor_name_option)
-        self.radio_button_2.setEnabled(False)
-        self.gridLayout.addWidget(self.radio_button_2, 2, 2, 1, 1)
-
-        self.btngroup = QtWidgets.QButtonGroup()
-        self.btngroup.addButton(self.radio_button)
-        self.btngroup.addButton(self.radio_button_2)
-
-        self.comboBox = self.construct_class.make_combobox(font=font_2, parent=self.gridLayoutWidget)
-        self.comboBox.setEnabled(False)
-        self.gridLayout.addWidget(self.comboBox, 3, 1, 1, 1)
-
-        self.lineEdit = self.construct_class.make_line_edit(parent=self.gridLayoutWidget, font=font)
-        self.lineEdit.setSizePolicy(sizePolicy)
-        self.lineEdit.setEnabled(False)
-        self.gridLayout.addWidget(self.lineEdit, 3, 2, 1, 1)
-
-
-        self.checkBox_3 = self.construct_class.make_checkbox(
-            font=font, text='С указанной фамилией проверяющего', command=self.select_checker,
-            parent=self.gridLayoutWidget)
-        self.gridLayout.addWidget(self.checkBox_3, 5, 0, 2, 1)
-
-        self.radio_button_3 = self.construct_class.make_radio_button(text='Фамилия из списка', font=font_1,
-                                                                     parent=self.gridLayoutWidget,
-                                                                     command=self.checker_name_option)
-        self.radio_button_3.setEnabled(False)
-        self.gridLayout.addWidget(self.radio_button_3, 5, 1, 1, 1)
-
-        self.radio_button_4 = self.construct_class.make_radio_button(text='Другая', font=font_1,
-                                                                     parent=self.gridLayoutWidget,
-                                                                     command=self.checker_name_option)
-        self.radio_button_4.setEnabled(False)
-        self.gridLayout.addWidget(self.radio_button_4, 5, 2, 1, 1)
-
-        self.btngroup_2 = QtWidgets.QButtonGroup()
-        self.btngroup_2.addButton(self.radio_button_3)
-        self.btngroup_2.addButton(self.radio_button_4)
-
-        self.comboBox_2 = self.construct_class.make_combobox(font=font_2, parent=self.gridLayoutWidget)
-        self.comboBox_2.setEnabled(False)
-        self.gridLayout.addWidget(self.comboBox_2, 6, 1, 1, 1)
-
-        self.lineEdit_2 = self.construct_class.make_line_edit(parent=self.gridLayoutWidget, font=font_1)
-        self.lineEdit_2.setSizePolicy(sizePolicy)
-        self.lineEdit_2.setEnabled(False)
-        self.gridLayout.addWidget(self.lineEdit_2, 6, 2, 1, 1)
-
-
-        self.checkBox_4 = self.construct_class.make_checkbox(text='Добавить водяной знак',
-                                                             font=font, parent=self.gridLayoutWidget,
-                                                             command=self.water_mark_option,
-                                                             activate=True)
-        self.gridLayout.addWidget(self.checkBox_4, 7, 0, 2, 1)
-
-        self.push_button = self.construct_class.make_button(text='Стандартный', font=font,
-                                                            parent=self.gridLayoutWidget,
-                                                            command=self.add_default_watermark
-                                                            )
-        self.gridLayout.addWidget(self.push_button, 7, 1, 1, 1)
-
-        self.push_button_2 = self.construct_class.make_button(text='Свое изображение', font=font,
-                                                              parent=self.gridLayoutWidget,
-                                                              command=self.add_custom_watermark)
-        self.gridLayout.addWidget(self.push_button_2, 7, 2, 1, 1)
-
-        self.checkBox_5 = self.construct_class.make_checkbox(text='Отсортировать файлы по формату',
-                                                             font=font, parent=self.gridLayoutWidget)
-        self.gridLayout.addWidget(self.checkBox_5, 9, 0, 1, 1)
-
-        self.lineEdit_3 = self.construct_class.make_line_edit(parent=self.gridLayoutWidget, font=font_1)
-        self.gridLayout.addWidget(self.lineEdit_3, 8, 1, 1, 2)
-
-
-        self.label = self.construct_class.make_label(text='Исключить следующие папки:', font=font,
-                                                     parent=self.gridLayoutWidget)
-        self.gridLayout.addWidget(self.label, 10, 0, 1, 3)
-
-        self.listWidget = QtWidgets.QListWidget(self.gridLayoutWidget)
-        self.listWidget.setFont(font)
-        self.gridLayout.addWidget(self.listWidget, 11, 0, 2, 2)
-
-
-        self.pushButton_3 = self.construct_class.make_button(text='Удалить выбранную\n папку',
-                                                             parent=self.gridLayoutWidget,
-                                                             font=font, size_policy=datePolicy)
-        self.gridLayout.addWidget(self.pushButton_3,  11, 2, 1, 1)
-
-        self.pushButton_4 = self.construct_class.make_button(text='Добавить папку',
-                                                             parent=self.gridLayoutWidget,
-                                                             font=font, size_policy=datePolicy)
-        self.gridLayout.addWidget(self.pushButton_4, 12, 2, 1, 1)
-
-        self.pushButton_5 = self.construct_class.make_button(text='Сбросить настройки',
-                                                             parent=self.gridLayoutWidget,
-                                                             font=font, command=self.set_default_settings)
-        self.gridLayout.addWidget(self.pushButton_5, 13, 0, 1, 3)
-
-        QtCore.QMetaObject.connectSlotsByName(Form)
-
-    def select_date(self):
-        self.dateEdit.setEnabled(self.checkBox.isChecked())
-        self.dateEdit_2.setEnabled(self.checkBox.isChecked())
-
-    def select_constructor(self):
-        self.comboBox.setEnabled(self.checkBox_2.isChecked())
-        self.lineEdit.setEnabled(self.checkBox_2.isChecked())
-        self.radio_button.setEnabled(self.checkBox_2.isChecked())
-        self.radio_button_2.setEnabled(self.checkBox_2.isChecked())
-        if self.checkBox_2.isChecked():
-            self.btngroup.setExclusive(True)
-            self.radio_button.setChecked(self.checkBox_2.isChecked())
-        else:
-            self.btngroup.setExclusive(False)
-            self.radio_button.setChecked(self.checkBox_2.isChecked())
-            self.radio_button_2.setChecked(self.checkBox_2.isChecked())
-
-
-    def select_checker(self):
-        self.comboBox_2.setEnabled(self.checkBox_3.isChecked())
-        self.lineEdit_2.setEnabled(self.checkBox_3.isChecked())
-        self.radio_button_3.setEnabled(self.checkBox_3.isChecked())
-        self.radio_button_4.setEnabled(self.checkBox_3.isChecked())
-        if self.checkBox_3.isChecked():
-            self.btngroup_2.setExclusive(True)
-            self.radio_button_3.setChecked(self.checkBox_3.isChecked())
-        else:
-            self.btngroup_2.setExclusive(False)
-            self.radio_button_3.setChecked(self.checkBox_3.isChecked())
-            self.radio_button_4.setChecked(self.checkBox_3.isChecked())
-
-    def constructor_name_option(self):
-        choosed_combo_box = self.sender().text() == 'Фамилия из списка'
-        self.comboBox.setEnabled(choosed_combo_box)
-        self.lineEdit.setEnabled(not choosed_combo_box)
-
-    def checker_name_option(self):
-        choosed_combo_box_2 = self.sender().text() == 'Фамилия из списка'
-        self.comboBox_2.setEnabled(choosed_combo_box_2)
-        self.lineEdit_2.setEnabled(not choosed_combo_box_2)
-
-    def water_mark_option(self):
-        self.push_button.setEnabled(self.checkBox_4.isChecked())
-        self.push_button_2.setEnabled(self.checkBox_4.isChecked())
-        self.lineEdit_3.setEnabled(self.checkBox_4.isChecked())
-
-    def add_default_watermark(self):
-        pass
-
-    def add_custom_watermark(self):
-        filename = QtWidgets.QFileDialog.getOpenFileName(self, "Выбрать файл", ".",
-                                                          "jpg(*.jpg);;"
-                                                          "png(*.png);;"
-                                                          "bmp(*.bmp);;")[0]
-        if filename:
-            self.lineEdit_3.setText(filename)
-
-    def set_default_settings(self):
-        pass
 
 class Ui_Merger(MakeWidgets):
     def __init__(self, parent=None):
@@ -245,6 +24,8 @@ class Ui_Merger(MakeWidgets):
         self.setFixedSize(720, 562)
         self.setupUi(self)
         self.directory = None
+        self.current_progress = 0
+        self.progress_step = 0
         self.settings_window = SettingsWindow()
 
     def setupUi(self, Merger):
@@ -298,7 +79,7 @@ class Ui_Merger(MakeWidgets):
                                              command=self.show_settings)
         self.gridLayout.addWidget(self.pushButton_8, 0, 3, 1, 1)
 
-        self.pushButton_9 = self.make_button(text='Обновить список файлов', font=font)
+        self.pushButton_9 = self.make_button(text='Обновить список файлов', font=font, command=self.refresh_settings)
         self.gridLayout.addWidget(self.pushButton_9, 1, 2, 1, 2)
 
         self.checkBox_3 = self.make_checkbox(font=font, text='Удалить папку с однодетальными \n'
@@ -306,7 +87,7 @@ class Ui_Merger(MakeWidgets):
         self.gridLayout.addWidget(self.checkBox_3, 13, 2, 1, 2)
 
         self.checkBox_4 = self.make_checkbox(font=font, text='С обходом всех папок'
-                                                             'в указанной папке', activate=True)
+                                                             'в выбраной папке', activate=True)
         self.gridLayout.addWidget(self.checkBox_4, 13, 0, 1, 2)
 
         self.label = self.make_text_edit(font=font, placeholder="Выберите папку с файлами в формате .spw или"
@@ -327,30 +108,60 @@ class Ui_Merger(MakeWidgets):
         QtCore.QMetaObject.connectSlotsByName(Merger)
 
     def choose_initial_folder(self):
-        self.directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
-        draw_list = []
-        if self.directory:
-            self.listWidget.clear()
-            if self.checkBox_4.isChecked():
-                for (this_dir, _, files_here) in os.walk(self.directory):
-                    if 'Былое' not in this_dir and 'Проработка' not in this_dir:
-                        files = self.get_files_in_folder(this_dir)
-                        draw_list += files
-            else:
-                draw_list = self.get_files_in_folder(self.directory)
-        if draw_list:
-            if self.settings_window.checkBox.isChecked():
-                draw_list = self.filter_files(draw_list)
+        directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
+        if directory:
+            self.directory = directory
+            self.label.setText(self.directory)
+            draw_list = self.get_all_files_in_folder()
             if draw_list:
-                self.label.setText(self.directory)
-                self.fill_list(draw_list)
+                draw_list = self.filter_files(draw_list)
+                if draw_list:
+                    self.fill_list(draw_list=draw_list)
+                    self.pushButton_5.setEnabled(True)
 
-    def filter_files(self, draw_list):
-        date_1 = self.settings_window.dateEdit.dateTime().toSecsSinceEpoch()
-        date_2 = self.settings_window.dateEdit_2.dateTime().toSecsSinceEpoch()
-        return kompas_api.filter_by_date(draw_list, date_1, date_2)
+    def refresh_settings(self):
+        folder = self.label.toPlainText()
+        if folder:
+            self.directory = folder
+            self.listWidget.clear()
+            draw_list = self.get_all_files_in_folder()
+            if draw_list:
+                draw_list = self.filter_files(draw_list)
+                if draw_list:
+                    self.fill_list(draw_list=draw_list)
+        else:
+            self.error('Укажите папку с файлами .cdw и .spw')
 
-    def get_files_in_folder(self, folder):
+    def filter_files(self, draw_list=None):
+        draw_list = draw_list or self.get_items_in_list(self.listWidget)
+        filters = self.get_all_filters()
+        if filters:
+            self.calculate_step(len(draw_list), filter_only=True)
+            draw_list = kompas_api.filter_draws(draw_list, **filters, instance=self)
+            self.current_progress = 100
+            self.progressBar.setValue(self.current_progress)
+            if not draw_list:
+                self.error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
+                return
+        return draw_list
+
+    def get_all_files_in_folder(self):
+        draw_list = []
+        except_folders_list = self.get_items_in_list(self.settings_window.listWidget)
+        self.listWidget.clear()
+        if self.checkBox_4.isChecked():
+            for (this_dir, _, files_here) in os.walk(self.directory):
+                if not os.path.basename(this_dir) in except_folders_list:
+                    files = self.get_files_in_one_folder(this_dir)
+                    draw_list += files
+        else:
+            draw_list = self.get_files_in_folder(self.directory)
+        if draw_list:
+            return draw_list
+        else:
+            self.error('Нету файлов .cdw или .spw, в выбраной папке(ах) с указанными параметрами')
+
+    def get_files_in_one_folder(self, folder):
         # sorting in the way so specification sheet is the first if .cdw and .spw files has the same name
         draw_list = [os.path.splitext(i) for i in os.listdir(folder) if os.path.splitext(i)[1] in self.kompas_ext]
         draw_list = sorted([(i[0], '.adw' if i[1] == '.spw' else '.cdw') for i in draw_list], key=itemgetter(0, 1))
@@ -360,16 +171,16 @@ class Ui_Merger(MakeWidgets):
 
     def merge_files_in_one(self):
         self.pushButton_5.setEnabled(False)
-        files = [str(self.listWidget.item(i).text()) for i
-                 in range(self.listWidget.count()) if self.listWidget.item(i).checkState()]
-        if self.checkBox.isChecked():
-            files = self.filter_files(files)
+        if self.settings_window.checkBox.isChecked():
+            files = self.filter_files()
         if not files:
             self.error('Нету файлов для сливания')
             return
         directory_pdf,  base_pdf_dir = self.create_folders()
         self.thread = MyBrandThread(files, directory_pdf, base_pdf_dir)
         self.thread.button_enable.connect(self.pushButton_5.setEnabled)
+        self.thread.progress_bar.connect(self.progressBar.setValue)
+        self.thread.errors.connect(self.error)
         self.thread.start()
 
     def create_folders(self):
@@ -414,6 +225,7 @@ class Ui_Merger(MakeWidgets):
 
     def clear_data(self):
         self.directory = None
+        self.label.clear()
         self.label.setPlaceholderText("Выберите папку с файлами \n в формате .cdw или .spw")
         self.listWidget.clear()
 
@@ -436,27 +248,70 @@ class Ui_Merger(MakeWidgets):
                                                                 "Чертж(*.cdw);;"
                                                                 "Спецификация(*.spw)")[0]]
         if filename[0]:
-            self.fill_list(filename)
+            self.fill_list(draw_list=filename)
+            self.pushButton_5.setEnabled(True)
 
     def add_folder_to_list(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
         draw_list = []
         if folder:
-            draw_list = self.get_files_in_folder(folder)
+            draw_list = self.get_files_in_one_folder(folder)
         if draw_list:
-            self.fill_list(draw_list)
+            self.fill_list(draw_list=draw_list)
+            self.pushButton_5.setEnabled(True)
 
     def show_settings(self):
-        self.settings_window.show()
+        self.settings_window.exec_()
+
+    def calculate_step(self, number_of_files, filter_only=False):
+        self.current_progress = 0
+        number_of_operations = 0
+        number_of_operations = self.settings_window.checkBox.isChecked()*1 or \
+                 self.settings_window.checkBox_2.isChecked()*1 or \
+                 self.settings_window.checkBox_3.isChecked()*1
+        if not filter_only:
+            number_of_operations += 2  # convert files and merger them
+        self.progress_step = int(100 / (number_of_operations * number_of_files))
+
+    def increase_step(self):
+        self.current_progress += self.progress_step
+        self.progressBar.setValue(self.current_progress)
+
+    def get_all_filters(self):
+        filters = {}
+        if self.settings_window.checkBox.isChecked():
+            date_1 = self.settings_window.dateEdit.dateTime().toSecsSinceEpoch()
+            date_2 = self.settings_window.dateEdit_2.dateTime().toSecsSinceEpoch()
+            filters['date_1'] = date_1
+            filters['date_2'] = date_2
+        if self.settings_window.checkBox_2.isChecked():
+            if self.settings_window.radio_button_2.isChecked():
+                constructor_name = self.settings_window.lineEdit.text()
+            else:
+                constructor_name = str(self.settings_window.comboBox.currentText())
+            if constructor_name:
+                filters['constructor_name'] = constructor_name
+        if self.settings_window.checkBox_3.isChecked():
+            if self.settings_window.radio_button_4.isChecked():
+                checker_name = self.settings_window.lineEdit_2.text()
+            else:
+                checker_name = str(self.settings_window.comboBox_2.currentText())
+            if checker_name:
+                filters['checker_name'] = checker_name
+        return filters
 
 
 class MyBrandThread(QThread):
     button_enable = pyqtSignal(bool)
+    errors =pyqtSignal(str)
+    progress_bar = pyqtSignal(float)
 
     def __init__(self, files, directory_pdf, base_pdf_dir):
         self.files = files
         self.base_pdf_dir = base_pdf_dir
         self.directory_pdf = directory_pdf
+        self.progress_step = int(100/(2 * len(files)))
+        self.current_progress = 0  # обнуляем прогресс в начале новой задачи
         QThread.__init__(self)
 
     def run(self):
@@ -466,35 +321,63 @@ class MyBrandThread(QThread):
             shutil.rmtree(self.directory_pdf)
         os.system(f'explorer "{os.path.normpath(self.base_pdf_dir)}"')
         os.startfile(pdf_file)
+        kompas_api.exit_kompas()
+        self.progress_bar.emit(100-self.current_progress)
         self.button_enable.emit(True)
 
-    @staticmethod
-    def cdw_to_pdf(files, directory_pdf):
+    def cdw_to_pdf(self, files, directory_pdf):
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
-        doc_app = application.Application
-        iConverter = doc_app.Converter(kompas_object.ksSystemPath(5) + r"\Pdf2d.dll")
+        doc_app , iConverter, _ = kompas_api.get_kompas_settings(application, kompas_object)
         number = 0
+        self.progress_bar.emit(self.current_progress)
         for file in files:
             number += 1
             iConverter.Convert(file, directory_pdf + "\\" +
                                f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
+            self.increase_step()
 
     def merge_pdf_files(self, directory):
-        # Получаем список файлов в переменную files
         files = sorted(os.listdir(directory), key=lambda fil: int(fil.split()[0]))
         merger_pdf = PyPDF2.PdfFileMerger()
         for filename in files:
             merger_pdf.append(fileobj=open(os.path.join(directory, filename), 'rb'))
+            self.increase_step()
         if merger.settings_window.checkBox_5.isChecked():
-            input_pages = sorted([(i, i.pagedata['/MediaBox'][2:]) for i in merger.pages], key=itemgetter(1))
+            input_pages = sorted([(i, i.pagedata['/MediaBox'][2:]) for i in merger_pdf.pages], key=itemgetter(1))
             merger_pdf.pages = [i[0] for i in input_pages]
         pdf_file = os.path.join(os.path.dirname(directory), f'{os.path.basename(directory)}.pdf')
         with open(pdf_file, 'wb') as pdf:
             merger_pdf.write(pdf)
+        if merger.settings_window.checkBox_4.isChecked():
+            self.add_watermark(pdf_file)
         for file in merger_pdf.inputs:
             file[0].close()
         return pdf_file
+
+    def add_watermark(self, pdf_file):
+        image = merger.settings_window.lineEdit_3.text()
+        position = merger.settings_window.watermark_position
+        if not image or not position:
+            return
+        if not os.path.exists(image) or image == 'Стандартный путь из настроек не существует':
+            self.errors.emit(f'Путь к файлу с картинкой не существует')
+            return
+        pdf_doc = fitz.open(pdf_file)  # open the PDF
+        rect = fitz.Rect(position)  # where to put image: use upper left corner
+        for page in pdf_doc:
+            if not page._isWrapped:
+                page._wrapContents()
+            try:
+                page.insertImage(rect, filename=image, overlay=False)
+            except ValueError:
+                self.errors.emit('Заданы неверные координаты, размещения картинки, водяной знак не был добавлен')
+                return
+        pdf_doc.saveIncr()  # do an incremental save
+
+    def increase_step(self):
+        self.current_progress += self.progress_step
+        self.progress_bar.emit(self.current_progress)
 
 
 if __name__ == '__main__':
@@ -503,8 +386,5 @@ if __name__ == '__main__':
     merger = Ui_Merger()
     merger.show()
     sys.excepthook = except_hook
-    try:
-        sys.exit(app.exec_())
-    except:
-        kompas_api.exit_kompas()
-        sys.exit(app.exec_())
+    sys.exit(app.exec_())
+

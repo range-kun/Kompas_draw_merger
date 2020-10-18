@@ -1,6 +1,7 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-class MakeWidgets(QtWidgets.QMainWindow,):
+
+class MakeWidgets(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent=None)
 
@@ -110,7 +111,7 @@ class MakeWidgets(QtWidgets.QMainWindow,):
             self.error('Имя уже добавлено в список')
 
     def make_menu(self):
-        menu=self.menuBar()
+        menu = self.menuBar()
         for name, items in self.menu_list:
             pulldown=menu.addMenu(name)
             self.addMenuItems(pulldown, items)
@@ -121,9 +122,11 @@ class MakeWidgets(QtWidgets.QMainWindow,):
             command.triggered.connect(item[1])
             pulldown.addAction(command)
 
-    def error(self, message):
+    def error(self, message, modal=True):
         self.error_dialog = QtWidgets.QErrorMessage()
         self.error_dialog.showMessage(message)
+        if modal:
+            self.error_dialog.exec_()
 
     def make_checkbox(self, *, font=None, text=None, activate=False, command=None, parent=None):
         if parent:
@@ -144,15 +147,32 @@ class MakeWidgets(QtWidgets.QMainWindow,):
         if font:
             radio_button.setFont(font)
         if command:
-            radio_button.toggled.connect(command)
+            radio_button.clicked.connect(command)
         return radio_button
 
-
-    def fill_list(self, draw_list):
+    def fill_list(self, *, draw_list, widget_list=None):
+        if widget_list != None:
+            widget = widget_list
+        else:
+            widget = self.listWidget
         for file in draw_list:
             item = QtWidgets.QListWidgetItem()
             item.setText(file)
             item.setCheckState(QtCore.Qt.Checked)
-            self.listWidget.addItem(item)
-        self.pushButton_5.setEnabled(True)
+            widget.addItem(item)
+
+    def remove_item(self, *, widget_list=None):
+        if widget_list.baseSize:
+            widget = widget_list
+        else:
+            widget = self.listWidget
+        list_items = widget.selectedItems()
+        if not list_items:
+            return
+        for item in list_items:
+            widget.takeItem(widget.row(item))
+
+    def get_items_in_list(self, list_widget):
+        return [str(list_widget.item(i).text()) for i in range(list_widget.count())
+                if list_widget.item(i).checkState()]
 

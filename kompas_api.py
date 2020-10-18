@@ -40,7 +40,11 @@ def set_converter(app, kompas_object):
     converter_parameters.Scale = 1.0  # масшта
     return iConverter
 
-
+def get_kompas_settings(application, kompas_object):
+    app = application.Application
+    iConverter = set_converter(app, kompas_object)
+    docs = app.Documents
+    return app, iConverter, docs
 
 def cdw_to_pdf(files, directory_pdf):
     kompas_api7_module, application, const = get_kompas_api7()
@@ -54,13 +58,17 @@ def cdw_to_pdf(files, directory_pdf):
                         f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
 
 
-def filter_by_date(files, date_1, date_2):
+def filter_draws(files, *, date_1=None, date_2=None,
+                   constructor_name=None, checker_name=None, instance):
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     docs = app.Documents
     draw_list = []
+    if date_1:
+        date_1_in_seconds, date_2_in_seconds = sorted([date_1, date_2])
     app.HideMessage = const.ksHideMessageNo  # отключаем отображение сообщений Компас, отвечая на всё "нет"
     for file in files:  # структура обработки для каждого документа
+        instance.increase_step()
         doc = docs.Open(file, False, False)  # открываем документ, в невидимом режиме для записи
         if os.path.splitext(file)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
             doc2D = kompas_api7_module.IKompasDocument2D(doc._oleobj_.QueryInterface
@@ -70,15 +78,24 @@ def filter_by_date(files, date_1, date_2):
                 doc._oleobj_.QueryInterface
                 (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
         iStamp = doc2D.LayoutSheets.Item(0).Stamp  # массив листов документа
-        date_in_stamp = iStamp.Text(130).Str
-        if date_in_stamp:
-            date_1_in_seconds, date_2_in_seconds = sorted([date_1, date_2])
-            try:
-                date_in_stamp = date_to_seconds(iStamp.Text(130).Str)
-            except:
+        if date_1:
+            date_in_stamp = iStamp.Text(130).Str
+            if date_in_stamp:
+                try:
+                    date_in_stamp = date_to_seconds(date_in_stamp)
+                except:
+                    continue
+                if not date_1_in_seconds <= date_in_stamp <= date_2_in_seconds:
+                    continue
+        if constructor_name:
+            constructor_in_Stamp = iStamp.Text(110).Str
+            if not constructor_name in constructor_in_Stamp:
                 continue
-            if date_in_stamp in range(date_1_in_seconds, date_2_in_seconds+1):
-                draw_list.append(file)
+        if checker_name:
+            checker_in_Stamp = iStamp.Text(115).Str
+            if not checker_in_Stamp in checker_in_Stamp:
+                continue
+        draw_list.append(file)
         doc.Close(const.kdDoNotSaveChanges)
     return draw_list
 
@@ -87,7 +104,7 @@ def date_to_seconds(date_string):
         new_date = date_string.split('.')
         new_date[-1] = '20' + new_date[-1]
         date_string = '.'.join(new_date)
-        struct_date = time.strptime(date_string, "%d.%m.%Y")
+    struct_date = time.strptime(date_string, "%d.%m.%Y")
     return time.mktime(struct_date)
 
 def exit_kompas():
