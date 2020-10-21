@@ -5,6 +5,8 @@ import time
 import kompas_api
 import PyPDF2
 import shutil
+import pythoncom
+import subprocess
 import fitz
 from operator import itemgetter
 from Widgets_class import MakeWidgets
@@ -27,6 +29,9 @@ class Ui_Merger(MakeWidgets):
         self.current_progress = 0
         self.progress_step = 0
         self.settings_window = SettingsWindow()
+        self.filter_thread = None
+        self.thread = None
+        self.previous_filters = {}
 
     def setupUi(self, Merger):
         Merger.setObjectName("Merger")
@@ -95,6 +100,7 @@ class Ui_Merger(MakeWidgets):
         self.gridLayout.addWidget(self.label, 0, 0, 1, 2)
 
         self.listWidget = QtWidgets.QListWidget(self.gridLayoutWidget)
+        self.listWidget.itemDoubleClicked.connect(self.open_item)
         self.gridLayout.addWidget(self.listWidget, 6, 0, 5, 4)
 
         self.progressBar = QtWidgets.QProgressBar(self.gridLayoutWidget)
@@ -114,44 +120,78 @@ class Ui_Merger(MakeWidgets):
             self.label.setText(self.directory)
             draw_list = self.get_all_files_in_folder()
             if draw_list:
-                draw_list = self.filter_files(draw_list)
-                if draw_list:
+                self.calculate_step(len(draw_list), filter_only=True)
+                if self.progress_step:
+                    self.switch_button_group(True)
+                    self.apply_filters(draw_list)
+                else:
                     self.fill_list(draw_list=draw_list)
-                    self.pushButton_5.setEnabled(True)
+            else:
+                self.error('Нету файлов .cdw или .spw, в выбранной папке(ах)')
 
     def refresh_settings(self):
         folder = self.label.toPlainText()
+        if not folder:
+            self.error('Укажите папку с файлами .cdw и .spw')
         if folder:
             self.directory = folder
             self.listWidget.clear()
             draw_list = self.get_all_files_in_folder()
             if draw_list:
-                draw_list = self.filter_files(draw_list)
-                if draw_list:
+                self.calculate_step(len(draw_list), filter_only=True)
+                if self.progress_step:
+                    self.switch_button_group(True)
+                    self.apply_filters(draw_list)
+                else:
+                    self.error('Обновление завершено')
                     self.fill_list(draw_list=draw_list)
-        else:
-            self.error('Укажите папку с файлами .cdw и .spw')
+            else:
+                self.error('Нету файлов .cdw или .spw, в выбранной папке(ах)')
 
-    def filter_files(self, draw_list=None):
+    def apply_filters(self, draw_list=None, filter_only=True):
+        # If refresh button is clicked then all files will be filtered anyway
+        # If merger button is clicked then script checks if files been already filtered,
+        # and settings didn't change
+        # If so script skips this step
         draw_list = draw_list or self.get_items_in_list(self.listWidget)
         filters = self.get_all_filters()
-        if filters:
-            self.calculate_step(len(draw_list), filter_only=True)
-            draw_list = kompas_api.filter_draws(draw_list, **filters, instance=self)
-            self.current_progress = 100
+        if not filter_only:
+            if filters == self.previous_filters and self.directory == self.label.toPlainText():
+                return 1
+        self.previous_filters = filters
+        self.filter_thread.status.connect(self.statusbar.showMessage)
+        self.filter_thread = FilterThread(draw_list, filters, filter_only)
+        self.filter_thread.increase_step.connect(self.increase_step)
+        self.filter_thread.finished.connect(self.handle_filter_results)
+        self.filter_thread.start()
+
+    def handle_filter_results(self, draw_list, filter_only=True):
+        if not draw_list:
+            self.error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
+            self.current_progress = 0
             self.progressBar.setValue(self.current_progress)
-            if not draw_list:
-                self.error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
-                return
-        return draw_list
+            self.listWidget.clear()
+            self.switch_button_group(True)
+            return
+        if filter_only:
+            self.current_progress = 0
+            self.progressBar.setValue(self.current_progress)
+            self.fill_list(draw_list=draw_list)
+            self.switch_button_group(True)
+            return
+        else:
+            self.start_merge_process(draw_list)
 
     def get_all_files_in_folder(self):
         draw_list = []
         except_folders_list = self.get_items_in_list(self.settings_window.listWidget)
         self.listWidget.clear()
         if self.checkBox_4.isChecked():
-            for (this_dir, _, files_here) in os.walk(self.directory):
-                if not os.path.basename(this_dir) in except_folders_list:
+            for this_dir, dirs, files_here in os.walk(self.directory, topdown=True):
+                dirs[:] = [d for d in dirs if d not in except_folders_list]
+                if os.path.basename(this_dir) in except_folders_list:
+                    continue
+                else:
                     files = self.get_files_in_one_folder(this_dir)
                     draw_list += files
         else:
@@ -170,58 +210,24 @@ class Ui_Merger(MakeWidgets):
         return draw_list
 
     def merge_files_in_one(self):
-        self.pushButton_5.setEnabled(False)
-        if self.settings_window.checkBox.isChecked():
-            files = self.filter_files()
-        if not files:
-            self.error('Нету файлов для сливания')
+        draws_list = self.get_items_in_list(self.listWidget)
+        self.calculate_step(len(draws_list))
+        if not draws_list:
+            self.error('Нету файлов для слития')
             return
-        directory_pdf,  base_pdf_dir = self.create_folders()
-        self.thread = MyBrandThread(files, directory_pdf, base_pdf_dir)
-        self.thread.button_enable.connect(self.pushButton_5.setEnabled)
-        self.thread.progress_bar.connect(self.progressBar.setValue)
+        self.switch_button_group(1)
+        reply = self.apply_filters(draws_list, False)
+        if reply:
+            self.start_merge_process(draws_list)
+
+    def start_merge_process(self, draws_list):
+        self.thread = MyBrandThread(draws_list, self.directory)
+        self.thread.buttons_enable.connect(self.switch_button_group)
+        self.thread.increase_step.connect(self.increase_step)
         self.thread.errors.connect(self.error)
+        self.thread.status.connect(self.statusbar.showMessage)
+        self.thread.progress_bar.connect(self.progressBar.setValue)
         self.thread.start()
-
-    def create_folders(self):
-        main_name = os.path.basename(self.directory)
-        base_pdf_dir = rf'{self.directory}\pdf'
-        pdf_file = r'%s\pdf\%s - 01 %s.pdf' % (self.directory, main_name, time.strftime("%d.%m.%Y"))
-        directory_pdf = os.path.splitext(pdf_file)[0]
-
-        if not os.path.exists(base_pdf_dir):
-            os.makedirs(base_pdf_dir)
-        if os.path.exists(pdf_file) or os.path.exists(directory_pdf):
-            # check if folder or file with same name exists if so:
-            # get maximum number of file and folder and incriminate +1 to
-            # name of new file and folder
-            created_files = max([int(i.split()[-2]) for i in os.listdir(base_pdf_dir)
-                                 if i.endswith(f'{time.strftime("%d.%m.%Y.pdf")}')], default=0)
-            created_folders = max([int(i.split()[-2]) for i in os.listdir(base_pdf_dir)
-                                   if i.endswith(f'{time.strftime("%d.%m.%Y")}')], default=0)
-            today_update = created_files if created_files >= created_folders else created_folders
-            today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
-            directory_pdf = r'%s\pdf\%s - %s %s' % \
-                            (self.directory, main_name, today_update, time.strftime("%d.%m.%Y"))
-        os.makedirs(directory_pdf)
-        return directory_pdf, base_pdf_dir
-
-    def merge_pdf_files(self, directory):
-        # Get list of files in directory
-        files = sorted(os.listdir(directory), key=lambda fil: int(fil.split()[0]))
-        pdf_document = PyPDF2.PdfFileMerger()
-        for filename in files:
-            pdf_document.append(fileobj=open(os.path.join(directory, filename), 'rb'))
-        # check if sorting option activate
-        if self.settings_window.checkBox_5.isChecked():
-            input_pages = sorted([(i, i.pagedata['/MediaBox'][2:]) for i in merger.pages], key=itemgetter(1))
-            pdf_document.pages = [i[0] for i in input_pages]
-        pdf_file_location = os.path.join(os.path.dirname(directory), f'{os.path.basename(directory)}.pdf')
-        with open(pdf_file_location, 'wb') as pdf:
-            pdf_document.write(pdf)
-        for file in pdf_document.inputs:
-            file[0].close()
-        return pdf_file_location
 
     def clear_data(self):
         self.directory = None
@@ -260,22 +266,38 @@ class Ui_Merger(MakeWidgets):
             self.fill_list(draw_list=draw_list)
             self.pushButton_5.setEnabled(True)
 
+    def open_item(self, item):
+        path = item.text()
+        os.system(fr'explorer "{os.path.normpath(os.path.dirname(path))}"')
+        os.startfile(path)
+
     def show_settings(self):
         self.settings_window.exec_()
 
     def calculate_step(self, number_of_files, filter_only=False):
         self.current_progress = 0
+        self.progress_step = 0
         number_of_operations = 0
-        number_of_operations = self.settings_window.checkBox.isChecked()*1 or \
-                 self.settings_window.checkBox_2.isChecked()*1 or \
-                 self.settings_window.checkBox_3.isChecked()*1
+        filters = self.get_all_filters()
+        if filters:
+            if not filters == self.previous_filters or filter_only:
+                number_of_operations = 1
         if not filter_only:
             number_of_operations += 2  # convert files and merger them
-        self.progress_step = int(100 / (number_of_operations * number_of_files))
+        if number_of_operations:
+            self.progress_step = 100 / (number_of_operations * number_of_files)
 
-    def increase_step(self):
-        self.current_progress += self.progress_step
-        self.progressBar.setValue(self.current_progress)
+    def increase_step(self, start=True):
+        if start:
+            self.current_progress += self.progress_step
+            self.progressBar.setValue(self.current_progress)
+
+    def switch_button_group(self, signal):
+        switch = False if self.pushButton_5.isEnabled() else True
+        self.pushButton_5.setEnabled(switch)
+        self.pushButton_6.setEnabled(switch)
+        self.pushButton_8.setEnabled(switch)
+        self.pushButton_9.setEnabled(switch)
 
     def get_all_filters(self):
         filters = {}
@@ -302,47 +324,71 @@ class Ui_Merger(MakeWidgets):
 
 
 class MyBrandThread(QThread):
-    button_enable = pyqtSignal(bool)
-    errors =pyqtSignal(str)
+    buttons_enable = pyqtSignal(bool)
+    errors = pyqtSignal(str)
+    status = pyqtSignal(str)
+    increase_step = pyqtSignal(bool)
     progress_bar = pyqtSignal(float)
 
-    def __init__(self, files, directory_pdf, base_pdf_dir):
+    def __init__(self, files, directory):
         self.files = files
-        self.base_pdf_dir = base_pdf_dir
-        self.directory_pdf = directory_pdf
-        self.progress_step = int(100/(2 * len(files)))
-        self.current_progress = 0  # обнуляем прогресс в начале новой задачи
+        self.directory = directory
         QThread.__init__(self)
 
     def run(self):
-        self.cdw_to_pdf(self.files, self.directory_pdf)
-        pdf_file = self.merge_pdf_files(self.directory_pdf)
+        directory_pdf, base_pdf_dir = self.create_folders()
+        self.cdw_to_pdf(self.files, directory_pdf)
+        pdf_file = self.merge_pdf_files(directory_pdf)
         if merger.checkBox_3.isChecked():
-            shutil.rmtree(self.directory_pdf)
-        os.system(f'explorer "{os.path.normpath(self.base_pdf_dir)}"')
+            shutil.rmtree(directory_pdf)
+        self.progress_bar.emit(0)
+        self.buttons_enable.emit(True)
+        os.system(f'explorer "{os.path.normpath(base_pdf_dir)}"')
         os.startfile(pdf_file)
         kompas_api.exit_kompas()
-        self.progress_bar.emit(100-self.current_progress)
-        self.button_enable.emit(True)
+
+    def create_folders(self):
+        main_name = os.path.basename(self.directory)
+        base_pdf_dir = rf'{self.directory}\pdf'
+        pdf_file = r'%s\pdf\%s - 01 %s.pdf' % (self.directory, main_name, time.strftime("%d.%m.%Y"))
+        directory_pdf = os.path.splitext(pdf_file)[0]
+
+        if not os.path.exists(base_pdf_dir):
+            os.makedirs(base_pdf_dir)
+        if os.path.exists(pdf_file) or os.path.exists(directory_pdf):
+            # check if folder or file with same name exists if so:
+            # get maximum number of file and folder and incriminate +1 to
+            # name of new file and folder
+            created_files = max([int(i.split()[-2]) for i in os.listdir(base_pdf_dir)
+                                 if i.endswith(f'{time.strftime("%d.%m.%Y.pdf")}')], default=0)
+            created_folders = max([int(i.split()[-2]) for i in os.listdir(base_pdf_dir)
+                                   if i.endswith(f'{time.strftime("%d.%m.%Y")}')], default=0)
+            today_update = created_files if created_files >= created_folders else created_folders
+            today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
+            directory_pdf = r'%s\pdf\%s - %s %s' % \
+                            (self.directory, main_name, today_update, time.strftime("%d.%m.%Y"))
+        os.makedirs(directory_pdf)
+        return directory_pdf, base_pdf_dir
 
     def cdw_to_pdf(self, files, directory_pdf):
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
         doc_app , iConverter, _ = kompas_api.get_kompas_settings(application, kompas_object)
         number = 0
-        self.progress_bar.emit(self.current_progress)
         for file in files:
             number += 1
+            self.increase_step.emit(True)
+            self.status.emit(f'Конвертация {file}')
             iConverter.Convert(file, directory_pdf + "\\" +
                                f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
-            self.increase_step()
 
     def merge_pdf_files(self, directory):
         files = sorted(os.listdir(directory), key=lambda fil: int(fil.split()[0]))
         merger_pdf = PyPDF2.PdfFileMerger()
         for filename in files:
             merger_pdf.append(fileobj=open(os.path.join(directory, filename), 'rb'))
-            self.increase_step()
+            self.increase_step.emit(True)
+            self.status.emit(f'Сливание {filename}')
         if merger.settings_window.checkBox_5.isChecked():
             input_pages = sorted([(i, i.pagedata['/MediaBox'][2:]) for i in merger_pdf.pages], key=itemgetter(1))
             merger_pdf.pages = [i[0] for i in input_pages]
@@ -375,9 +421,65 @@ class MyBrandThread(QThread):
                 return
         pdf_doc.saveIncr()  # do an incremental save
 
-    def increase_step(self):
-        self.current_progress += self.progress_step
-        self.progress_bar.emit(self.current_progress)
+
+
+class FilterThread(QThread):
+    finished = pyqtSignal(list, bool)
+    increase_step = pyqtSignal(bool)
+    status = pyqtSignal(str)
+
+    def __init__(self, draw_list, filters, filter_only=True):
+        self.draw_list = draw_list
+        self.filters = filters
+        self.filter_only = filter_only
+        QThread.__init__(self)
+
+    def run(self):
+        self.filter_draws(self.draw_list, **self.filters)
+
+    def filter_draws(self, files, *, date_1=None, date_2=None,
+                     constructor_name=None, checker_name=None):
+        kompas_api7_module, application, const = kompas_api.get_kompas_api7()
+        app = application.Application
+        docs = app.Documents
+        draw_list = []
+        if date_1:
+            date_1_in_seconds, date_2_in_seconds = sorted([date_1, date_2])
+        app.HideMessage = const.ksHideMessageNo  # отключаем отображение сообщений Компас, отвечая на всё "нет"
+        for file in files:  # структура обработки для каждого документа
+            self.status.emit(f'Применение фильтров к {file}')
+            self.increase_step.emit(True)
+            doc = docs.Open(file, False, False)  # открываем документ, в невидимом режиме для записи
+            if os.path.splitext(file)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
+                doc2D = kompas_api7_module.IKompasDocument2D(doc._oleobj_.QueryInterface
+                                                             (kompas_api7_module.IKompasDocument2D.CLSID,
+                                                              pythoncom.IID_IDispatch))
+            else:  # если спецификация, то используем интерфейс для спецификации
+                doc2D = kompas_api7_module.ISpecificationDocument(
+                    doc._oleobj_.QueryInterface
+                    (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
+            iStamp = doc2D.LayoutSheets.Item(0).Stamp  # массив листов документа
+            if date_1:
+                date_in_stamp = iStamp.Text(130).Str
+                if date_in_stamp:
+                    try:
+                        date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
+                    except:
+                        continue
+                    if not date_1_in_seconds <= date_in_stamp <= date_2_in_seconds:
+                        continue
+            if constructor_name:
+                constructor_in_Stamp = iStamp.Text(110).Str
+                if not constructor_name in constructor_in_Stamp:
+                    continue
+            if checker_name:
+                checker_in_Stamp = iStamp.Text(115).Str
+                if not checker_in_Stamp in checker_in_Stamp:
+                    continue
+            draw_list.append(file)
+            doc.Close(const.kdDoNotSaveChanges)
+        kompas_api.exit_kompas()
+        self.finished.emit(draw_list, self.filter_only)
 
 
 if __name__ == '__main__':

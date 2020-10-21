@@ -122,11 +122,11 @@ class MakeWidgets(QtWidgets.QMainWindow):
             command.triggered.connect(item[1])
             pulldown.addAction(command)
 
-    def error(self, message, modal=True):
-        self.error_dialog = QtWidgets.QErrorMessage()
-        self.error_dialog.showMessage(message)
-        if modal:
-            self.error_dialog.exec_()
+    def error(self, message):
+        error_dialog = QtWidgets.QErrorMessage(self)
+        error_dialog.setWindowModality(QtCore.Qt.WindowModal)
+        error_dialog.showMessage(message)
+        error_dialog.exec_()
 
     def make_checkbox(self, *, font=None, text=None, activate=False, command=None, parent=None):
         if parent:

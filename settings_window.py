@@ -185,7 +185,12 @@ class SettingsWindow(QtWidgets.QDialog):
         self.pushButton_3 = self.construct_class.make_button(text='Сбросить настройки',
                                                              parent=self.gridLayoutWidget,
                                                              font=font, command=self.set_default_settings)
-        self.gridLayout.addWidget(self.pushButton_3, 13, 0, 1, 3)
+        self.gridLayout.addWidget(self.pushButton_3, 13, 1, 1, 3)
+
+        self.pushButton_4 = self.construct_class.make_button(text='Ок', parent=self.gridLayoutWidget,
+                                                             font=font, command=self.close)
+        self.gridLayout.addWidget(self.pushButton_4, 13, 0, 1, 1)
+
 
         QtCore.QMetaObject.connectSlotsByName(Form)
 
@@ -196,7 +201,6 @@ class SettingsWindow(QtWidgets.QDialog):
                 data = open('settings.json', encoding='utf-8-sig')
         except OSError:
             miss_file = self.construct_class.error('Файл settings.txt \n отсутсвует')
-            miss_file.exec_()
             return
         try:
             obj = json.load(data)
