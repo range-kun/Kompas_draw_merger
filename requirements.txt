@@ -1,0 +1,8 @@
+click==7.1.2
+PyPDF2==1.26.0
+PyQt5==5.13.2
+PyQt5-sip==12.8.1
+PyQt5-stubs==5.14.2.2
+pyqt5-tools==5.13.2.1.6rc1
+python-dotenv==0.14.0
+pywin32==228

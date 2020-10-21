@@ -1,0 +1,30 @@
+﻿{
+  "except_folders_list":
+          [
+              "Былое",
+              "Проработка"
+          ],
+  "constructor_list":
+          [
+            "",
+            "Дугин",
+            "Мишнева",
+            "Педан",
+            "Рыженков"
+          ],
+  "checker_list":
+          [
+            "",
+            "Педан"
+          ],
+  "add_default_watermark": true,
+  "watermark_path": "12.png",
+  "watermark_position":
+          [
+            0,
+            0,
+            170,
+            170
+          ],
+  "sort_files": false
+}
