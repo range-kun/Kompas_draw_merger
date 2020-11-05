@@ -5,8 +5,9 @@ class MakeWidgets(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent=None)
 
-    def make_button(self, *, text, command=None, size=None, font=None, size_policy=None, parent=None):
+    def make_button(self, *, text, command=None, size=None, font=None, size_policy=None, parent=None, enabled=True):
         button = QtWidgets.QPushButton(parent or self.centralwidget)
+        button.setEnabled(enabled)
         if size:
             button.setMaximumSize(QtCore.QSize(*size))
         if command:

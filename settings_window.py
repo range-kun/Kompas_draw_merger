@@ -223,7 +223,10 @@ class SettingsWindow(QtWidgets.QDialog):
                             ]
         for key in settings:
             if type(self.__dict__[key]) == list:
-                self.__dict__[key][:] = self.load_settings.get(key, None)
+                try:
+                    self.__dict__[key][:] = self.load_settings.get(key, None)
+                except TypeError:
+                    self.__dict__[key][:] = []
             else:
                 self.__dict__[key] = self.load_settings.get(key, None)
         for method, args, kwargs in settings_methods:
@@ -318,7 +321,6 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def delete_folder(self):
         self.construct_class.remove_item(widget_list=self.listWidget)
-
 
     def clear_settings(self):
         self.checkBox.setChecked(False)
