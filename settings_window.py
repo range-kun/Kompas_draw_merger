@@ -15,6 +15,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.constructor_list = []
         self.checker_list = []
         self.add_default_watermark = False
+        self.auto_save_folder = False
         self.watermark_path = ''
         self.watermark_position = []
         self.sort_files = False
@@ -24,10 +25,10 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def setupUi(self, Form):
         Form.setObjectName("Form")
-        Form.resize(675, 441)
+        Form.resize(675, 461)
 
         self.gridLayoutWidget = QtWidgets.QWidget(Form)
-        self.gridLayoutWidget.setGeometry(QtCore.QRect(10, 10, 660, 421))
+        self.gridLayoutWidget.setGeometry(QtCore.QRect(10, 10, 660, 441))
         self.gridLayoutWidget.setObjectName("gridLayoutWidget")
         self.gridLayout = QtWidgets.QGridLayout(self.gridLayoutWidget)
         self.gridLayout.setContentsMargins(0, 0, 0, 0)
@@ -151,7 +152,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.btngroup_3.addButton(self.radio_button_5)
         self.btngroup_3.addButton(self.radio_button_6)
 
-        self.checkBox_5 = self.construct_class.make_checkbox(text='Отсортировать файлы по формату',
+        self.checkBox_5 = self.construct_class.make_checkbox(text='Разбить на файлы по размерам',
                                                              font=font, parent=self.gridLayoutWidget)
         self.gridLayout.addWidget(self.checkBox_5, 9, 0, 1, 1)
 
@@ -159,37 +160,50 @@ class SettingsWindow(QtWidgets.QDialog):
         self.gridLayout.addWidget(self.lineEdit_3, 8, 1, 1, 2)
         self.lineEdit_3.setEnabled(False)
 
+        self.radio_button_7 = self.construct_class.make_radio_button(text='Указать папку сохранения вручную', font=font_2,
+                                                                   parent=self.gridLayoutWidget)
+        self.gridLayout.addWidget(self.radio_button_7, 10, 0, 1, 1)
+        self.radio_button_7.setChecked(True)
+
+        self.radio_button_8 = self.construct_class.make_radio_button(text='Выбрать папку автоматически', font=font_2,
+                                                                     parent=self.gridLayoutWidget)
+        self.gridLayout.addWidget(self.radio_button_8, 10, 1, 1, 3)
+
+        self.btngroup_4 = QtWidgets.QButtonGroup()
+        self.btngroup_4.addButton(self.radio_button_7)
+        self.btngroup_4.addButton(self.radio_button_8)
 
         self.label = self.construct_class.make_label(text='Исключить следующие папки:', font=font,
                                                      parent=self.gridLayoutWidget)
-        self.gridLayout.addWidget(self.label, 10, 0, 1, 3)
+        self.gridLayout.addWidget(self.label, 11, 0, 1, 3)
+
 
         self.listWidget = QtWidgets.QListWidget(self.gridLayoutWidget)
         self.listWidget.setFont(font)
-        self.gridLayout.addWidget(self.listWidget, 11, 0, 2, 2)
+        self.gridLayout.addWidget(self.listWidget, 12, 0, 2, 2)
 
 
         self.pushButton = self.construct_class.make_button(text='Добавить папку',
                                                            parent=self.gridLayoutWidget,
                                                            font=font, size_policy=datePolicy,
                                                            command=self.add_folder)
-        self.gridLayout.addWidget(self.pushButton,  11, 2, 1, 1)
+        self.gridLayout.addWidget(self.pushButton,  12, 2, 1, 1)
 
         self.pushButton_2 = self.construct_class.make_button(text='Удалить выбранную\n папку',
                                                              parent=self.gridLayoutWidget,
                                                              font=font, size_policy=datePolicy,
                                                              command=self.delete_folder
                                                              )
-        self.gridLayout.addWidget(self.pushButton_2, 12, 2, 1, 1)
+        self.gridLayout.addWidget(self.pushButton_2, 13, 2, 1, 1)
 
         self.pushButton_3 = self.construct_class.make_button(text='Сбросить настройки',
                                                              parent=self.gridLayoutWidget,
                                                              font=font, command=self.set_default_settings)
-        self.gridLayout.addWidget(self.pushButton_3, 13, 1, 1, 3)
+        self.gridLayout.addWidget(self.pushButton_3, 14, 1, 1, 3)
 
         self.pushButton_4 = self.construct_class.make_button(text='Ок', parent=self.gridLayoutWidget,
                                                              font=font, command=self.close)
-        self.gridLayout.addWidget(self.pushButton_4, 13, 0, 1, 1)
+        self.gridLayout.addWidget(self.pushButton_4, 14, 0, 1, 1)
 
 
         QtCore.QMetaObject.connectSlotsByName(Form)
@@ -200,7 +214,7 @@ class SettingsWindow(QtWidgets.QDialog):
             if os.stat(file_dir+r'\settings.json').st_size > 0:
                 data = open('settings.json', encoding='utf-8-sig')
         except OSError:
-            miss_file = self.construct_class.error('Файл settings.txt \n отсутсвует')
+            self.construct_class.error('Файл settings.txt \n отсутсвует')
             return
         try:
             obj = json.load(data)
@@ -212,7 +226,8 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def apply_settings(self):
         settings = ('except_folders_list', 'constructor_list', 'checker_list',
-                    'add_default_watermark', 'watermark_path', 'watermark_position', 'sort_files')
+                    'add_default_watermark', 'watermark_path',
+                    'watermark_position', 'sort_files', 'auto_save_folder')
         settings_methods = [(self.construct_class.fill_list, (), {'widget_list': self.listWidget,
                                                                   'draw_list': self.except_folders_list}),
                             (self.construct_class.fill_combo_box, (self.constructor_list, self.comboBox), {}),
@@ -220,6 +235,7 @@ class SettingsWindow(QtWidgets.QDialog):
                             ('check_watermark', lambda: self.checkBox_4.setChecked(self.add_default_watermark), {}),
                             ('activate_watermark', lambda: self.select_watermark(), {}),
                             ('activate_sorting', lambda: self.checkBox_5.setChecked(self.sort_files), {}),
+                            ('auto_save_folder', lambda: self.select_auto_folder(), {})
                             ]
         for key in settings:
             if type(self.__dict__[key]) == list:
@@ -297,6 +313,12 @@ class SettingsWindow(QtWidgets.QDialog):
             self.btngroup_3.setExclusive(False)
             self.radio_button_5.setChecked(self.checkBox_4.isChecked())
             self.radio_button_6.setChecked(self.checkBox_4.isChecked())
+
+    def select_auto_folder(self):
+        if self.auto_save_folder:
+            self.radio_button_8.setChecked(True)
+        else:
+            self.radio_button_7.setChecked(True)
 
     def watermark_option(self):
         choosed_default_watermark = self.sender().text() == 'Стандартный'

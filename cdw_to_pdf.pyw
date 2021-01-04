@@ -2,6 +2,7 @@
 import sys
 import os
 import queue
+import re
 import time
 import kompas_api
 import PyPDF2
@@ -17,8 +18,6 @@ from Widgets_class import MakeWidgets
 from settings_window import SettingsWindow
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
-
-dict_for_pdf = None
 
 
 def except_hook(cls, exception, traceback):
@@ -55,10 +54,12 @@ class Ui_Merger(MakeWidgets):
     def setupUi(self, Merger):
         Merger.setObjectName("Merger")
         font = QtGui.QFont()
-        sizepolicy =\
+        sizepolicy = \
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Ignored)
         sizepolicy_button = \
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Ignored)
+        sizepolicy_button_2 = \
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         font.setFamily("Arial")
         font.setPointSize(12)
         Merger.setFont(font)
@@ -109,7 +110,7 @@ class Ui_Merger(MakeWidgets):
 
         self.pushButton_10 = self.make_button(text='Выбор файла\n с базой чертежей', font=font, enabled=False,
                                               command=self.get_data_base_path)
-        self.gridLayout.addWidget(self.pushButton_10,  1, 3, 1, 1)
+        self.gridLayout.addWidget(self.pushButton_10, 1, 3, 1, 1)
 
         self.pushButton_11 = self.make_button(text='Выбор \nспецификации', font=font, enabled=False,
                                               command=self.choose_specification)
@@ -118,7 +119,6 @@ class Ui_Merger(MakeWidgets):
         self.pushButton_13 = self.make_button(text='Сохранить \n базу чертежей', font=font, enabled=False,
                                               command=self.apply_data_base_save)
         self.gridLayout.addWidget(self.pushButton_13, 2, 3, 1, 1)
-
 
         self.checkBox_3 = self.make_checkbox(font=font, text='Удалить однодетальные pdf-чертежи по окончанию',
                                              activate=True)
@@ -134,15 +134,16 @@ class Ui_Merger(MakeWidgets):
         self.gridLayout.addWidget(self.checkBox_5, 3, 1, 1, 1)
 
         self.line_edit = self.make_text_edit(font=font, placeholder="Выберите папку с файлами в формате .spw или"
-                                             " .cdw", size_policy=sizepolicy)
+                                                                    " .cdw", size_policy=sizepolicy)
         self.gridLayout.addWidget(self.line_edit, 1, 0, 1, 2)
 
         self.line_edit_2 = self.make_text_edit(font=font, placeholder="Укажите путь до файла со спецификацией"
-                                               " .sdw", size_policy=sizepolicy)
+                                                                      " .sdw", size_policy=sizepolicy)
         self.line_edit_2.setEnabled(False)
         self.gridLayout.addWidget(self.line_edit_2, 2, 0, 1, 2)
 
-        self.radio_button = self.make_radio_button(text='Поиск по папке', font=font, command=self.choose_search_way)
+        self.radio_button = self.make_radio_button(text='Поиск по папке', font=font,
+                                                   command=self.choose_search_way)
         self.radio_button.setChecked(True)
         self.gridLayout.addWidget(self.radio_button, 3, 2, 1, 1)
 
@@ -150,10 +151,27 @@ class Ui_Merger(MakeWidgets):
                                                      command=self.choose_search_way)
         self.gridLayout.addWidget(self.radio_button_2, 3, 0, 1, 1)
 
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.gridLayout.addLayout(self.horizontalLayout, 8, 0, 1, 4)
 
         self.listWidget = QtWidgets.QListWidget(self.gridLayoutWidget)
         self.listWidget.itemDoubleClicked.connect(self.open_item)
-        self.gridLayout.addWidget(self.listWidget, 8, 0, 1, 4)
+        self.horizontalLayout.addWidget(self.listWidget)
+
+        self.verticalLayout = QtWidgets.QVBoxLayout()
+        self.horizontalLayout.addLayout(self.verticalLayout)
+
+        self.pushButton_14 = self.make_button(text='\n\n', size_policy=sizepolicy_button_2,
+                                              command=self.move_item_up)
+        self.pushButton_14.setIcon(QtGui.QIcon('img/arrow_up.png'))
+        self.pushButton_14.setIconSize(QtCore.QSize(50, 50))
+
+        self.pushButton_15 = self.make_button(text='\n\n', size_policy=sizepolicy_button_2,
+                                              command=self.move_item_down)
+        self.pushButton_15.setIcon(QtGui.QIcon('img/arrow_down.png'))
+        self.pushButton_15.setIconSize(QtCore.QSize(50, 50))
+        self.verticalLayout.addWidget(self.pushButton_14)
+        self.verticalLayout.addWidget(self.pushButton_15)
 
         self.progressBar = QtWidgets.QProgressBar(self.gridLayoutWidget)
         self.progressBar.setTextVisible(False)
@@ -194,6 +212,18 @@ class Ui_Merger(MakeWidgets):
                 return draw_list
             else:
                 return None
+
+    def move_item_up(self):
+        current_row = self.listWidget.currentRow()
+        current_item = self.listWidget.takeItem(current_row)
+        self.listWidget.insertItem(current_row - 1, current_item)
+        self.listWidget.setCurrentRow(current_row - 1)
+
+    def move_item_down(self):
+        current_row = self.listWidget.currentRow()
+        current_item = self.listWidget.takeItem(current_row)
+        self.listWidget.insertItem(current_row + 1, current_item)
+        self.listWidget.setCurrentRow(current_row + 1)
 
     def choose_specification(self):
         filename = [QtWidgets.QFileDialog.getOpenFileName(self, "Выбрать файл", ".",
@@ -262,6 +292,7 @@ class Ui_Merger(MakeWidgets):
         self.recursive_thread.buttons_enable.connect(self.switch_button_group)
         self.recursive_thread.finished.connect(self.handle_specification_result)
         self.recursive_thread.status.connect(self.statusbar.showMessage)
+        self.recursive_thread.errors.connect(self.error)
         self.recursive_thread.start()
 
     def change_checkbox_5_status(self):
@@ -467,9 +498,12 @@ class Ui_Merger(MakeWidgets):
         return draw_list
 
     def check_lines(self):
-        if self.radio_button_2.isChecked() and (self.search_path != self.line_edit.toPlainText()
-                                                or self.specification_path != self.line_edit_2.toPlainText()
-                                                or self.checkBox_5_current_status != self.checkBox_5_status):
+        if self.radio_button.isChecked() and os.path.isfile(self.line_edit.toPlainText()):
+            self.error('Укажите папку для сливания')
+            return
+        elif self.radio_button_2.isChecked() and (self.search_path != self.line_edit.toPlainText()
+                                                  or self.specification_path != self.line_edit_2.toPlainText()
+                                                  or self.checkBox_5_current_status != self.checkBox_5_status):
             choice = QtWidgets.QMessageBox.question(self, 'Изменения',
                                                     f"Настройки поиска файлов и/или спецификация были изменены. "
                                                     f"Обновить список файлов?",
@@ -479,7 +513,7 @@ class Ui_Merger(MakeWidgets):
             else:
                 self.merge_files_in_one()
         elif self.radio_button.isChecked() and (self.search_path != self.line_edit.toPlainText()
-                                                or self.checkBox_4_current_status != self.checkBox_4_status) :
+                                                or self.checkBox_4_current_status != self.checkBox_4_status):
             choice = QtWidgets.QMessageBox.question(self, 'Изменения',
                                                     f"Путь или настройки поиска были изменены. "
                                                     f"Обновить список файлов?",
@@ -505,7 +539,9 @@ class Ui_Merger(MakeWidgets):
 
     def start_merge_process(self, draws_list):
         self.data_queue = queue.Queue()
-        self.thread = MyBrandThread(draws_list, self.search_path, self.data_queue)
+        search_path = self.search_path if self.radio_button.isChecked() \
+            else os.path.dirname(self.specification_path)
+        self.thread = MyBrandThread(draws_list, search_path, self.data_queue)
         self.thread.buttons_enable.connect(self.switch_button_group)
         self.thread.increase_step.connect(self.increase_step)
         self.thread.kill_thread.connect(self.stop_merge_thread)
@@ -550,8 +586,8 @@ class Ui_Merger(MakeWidgets):
 
     def add_file_to_list(self):
         filename = [QtWidgets.QFileDialog.getOpenFileName(self, "Выбрать файл", ".",
-                                                                "Чертж(*.cdw);;"
-                                                                "Спецификация(*.spw)")[0]]
+                                                          "Чертж(*.cdw);;"
+                                                          "Спецификация(*.spw)")[0]]
         if filename[0]:
             self.fill_list(draw_list=filename)
             self.pushButton_5.setEnabled(True)
@@ -618,7 +654,7 @@ class Ui_Merger(MakeWidgets):
 
     def choose_folder(self, signal):
         dict_for_pdf = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".",
-                                                            QtWidgets.QFileDialog.ShowDirsOnly)
+                                                                  QtWidgets.QFileDialog.ShowDirsOnly)
         if not dict_for_pdf:
             self.data_queue.put('Not_chosen')
         else:
@@ -690,97 +726,140 @@ class MyBrandThread(QThread):
         QThread.__init__(self)
 
     def run(self):
-        directory_pdf, base_pdf_dir = self.create_folders()
-        if not directory_pdf and not base_pdf_dir:
+        single_draw_dir, base_pdf_dir, main_name = self.create_folders()
+        if not single_draw_dir and not base_pdf_dir:
             self.errors.emit('Запись прервана, папка не была найдена')
             self.buttons_enable.emit(True)
             self.progress_bar.emit(0)
             self.kill_thread.emit()
-        self.cdw_to_pdf(self.files, directory_pdf)
-        pdf_file = self.merge_pdf_files(directory_pdf)
+        self.cdw_to_pdf(self.files, single_draw_dir)
+        pdf_file = self.merge_pdf_files(single_draw_dir, main_name)
         if merger.checkBox_3.isChecked():
-            shutil.rmtree(directory_pdf)
+            shutil.rmtree(single_draw_dir)
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
-        os.system(f'explorer "{os.path.normpath(base_pdf_dir)}"')
-        os.startfile(pdf_file)
+        os.system(f'explorer "{(os.path.normpath(os.path.dirname(single_draw_dir)))}"')
+        if not merger.settings_window.checkBox_5.isChecked():
+            os.startfile(pdf_file)
         kompas_api.exit_kompas(self.appl)
         self.status.emit('Слитие успешно завершено')
 
     def create_folders(self):
-        main_name, base_pdf_dir, pdf_file, directory_pdf = self.make_paths()
-        if not os.path.exists(base_pdf_dir):
-            try:
-                os.makedirs(base_pdf_dir)
-            except FileNotFoundError:
-                self.choose_folder.emit(True)
-                while True:
-                    time.sleep(0.1)
-                    try:
-                        data = self.data_queue.get(block=False)
-                    except queue.Empty:
-                        pass
-                    else:
-                        break
-                if data != 'Not_chosen':
-                    self.search_path = data
-                    main_name, base_pdf_dir, pdf_file, directory_pdf = self.make_paths()
+        if merger.settings_window.radio_button_8.isChecked():
+            base_pdf_dir, single_draw_dir, main_name = self.make_paths()
+        else:
+            self.choose_folder.emit(True)
+            while True:
+                time.sleep(0.1)
+                try:
+                    directory_to_save = self.data_queue.get(block=False)
+                except queue.Empty:
+                    pass
                 else:
-                    return None, None
+                    break
+            if directory_to_save != 'Not_chosen':
+                base_pdf_dir, single_draw_dir, main_name = self.make_paths(directory_to_save)
+            else:
+                return None, None, None
+        os.makedirs(single_draw_dir)
+        return single_draw_dir, base_pdf_dir, main_name
 
-        if os.path.exists(pdf_file) or os.path.exists(directory_pdf):
-            # check if folder or file with same name exists if so:
-            # get maximum number of file and folder and incriminate +1 to
-            # name of new file and folder
-            created_files = max([int(i.split()[-2]) for i in os.listdir(base_pdf_dir)
-                                 if i.endswith(f'{time.strftime("%d.%m.%Y.pdf")}')], default=0)
-            created_folders = max([int(i.split()[-2]) for i in os.listdir(base_pdf_dir)
-                                   if i.endswith(f'{time.strftime("%d.%m.%Y")}')], default=0)
-            today_update = created_files if created_files >= created_folders else created_folders
-            today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
-            directory_pdf = r'%s\pdf\%s - %s %s' % \
-                            (self.search_path, main_name, today_update, time.strftime("%d.%m.%Y"))
-        os.makedirs(directory_pdf)
-        return directory_pdf, base_pdf_dir
+    def make_paths(self, directory_to_save=None):
+        today_date = time.strftime("%d.%m.%Y")
+        if merger.radio_button_2.isChecked():
+            main_name = os.path.basename(merger.specification_path)[:-4]
+        else:
+            main_name = os.path.basename(self.search_path)
+        if not merger.settings_window.checkBox_5.isChecked():  # if not required to divide file
+            base_pdf_dir = rf'{directory_to_save or self.search_path}\pdf'
+            pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, main_name, today_date)
+        else:
+            base_pdf_dir = r'%s\pdf\%s - 01 %s' % (directory_to_save or self.search_path,
+                                                   main_name, today_date)
+            pdf_file = r'%s\%s.pdf' % (base_pdf_dir, main_name)
+        single_draw_dir = os.path.splitext(pdf_file)[0] + " Однодетальные"
+        # next code check if folder or file with same name exists if so:
+        # get maximum number of file and folder and incriminate +1 to
+        # name of new file and folder
+        check_path = os.path.dirname(base_pdf_dir) if merger.settings_window.checkBox_5.isChecked() else base_pdf_dir
+        if os.path.exists(check_path) and main_name in ' '.join(os.listdir(check_path)):
+            string_of_files = ' '.join(os.listdir(check_path))
+            today_update = max(map(int, re.findall(rf'{main_name} - (\d\d)(?= {today_date})', string_of_files)),
+                               default=0)
+            if today_update:
+                today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
+                if merger.settings_window.checkBox_5.isChecked():
+                    single_draw_dir = r'%s\pdf\%s - %s %s\Однодетальные' % (directory_to_save or self.search_path,
+                                                                            main_name, today_update, today_date)
+                else:
+                    single_draw_dir = r'%s\pdf\%s - %s %s Однодетальные' % (directory_to_save or self.search_path,
+                                                                            main_name, today_update, today_date)
+        return base_pdf_dir, single_draw_dir, main_name
 
-    def make_paths(self):
-        main_name = os.path.basename(self.search_path)
-        base_pdf_dir = rf'{self.search_path}\pdf'
-        pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, main_name, time.strftime("%d.%m.%Y"))
-        directory_pdf = os.path.splitext(pdf_file)[0]
-        return main_name, base_pdf_dir, pdf_file, directory_pdf
-
-    def cdw_to_pdf(self, files, directory_pdf):
+    def cdw_to_pdf(self, files, single_draw_dir):
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
         self.appl = kompas_object
-        doc_app , iConverter, _ = kompas_api.get_kompas_settings(application, kompas_object)
+        doc_app, iConverter, _ = kompas_api.get_kompas_settings(application, kompas_object)
         number = 0
         for file in files:
             number += 1
             self.increase_step.emit(True)
             self.status.emit(f'Конвертация {file}')
-            iConverter.Convert(file, directory_pdf + "\\" +
+            iConverter.Convert(file, single_draw_dir + "\\" +
                                f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
 
-    def merge_pdf_files(self, directory):
-        files = sorted(os.listdir(directory), key=lambda fil: int(fil.split()[0]))
-        merger_pdf = PyPDF2.PdfFileMerger()
+    def merge_pdf_files(self, directory_with_draws, main_name):
+        files = sorted(os.listdir(directory_with_draws), key=lambda fil: int(fil.split()[0]))
+        merger_instance = self.create_merger_instance(directory_with_draws, files)
+        if type(merger_instance) is dict:  # if file gonna be divided
+            for key, item in merger_instance.items():
+                format_name, merger_writer, _ = item
+                pdf_file = os.path.join(os.path.dirname(directory_with_draws),
+                                        f'{format_name}-{main_name}.pdf')
+                with open(pdf_file, 'wb') as pdf:
+                    merger_writer.write(pdf)
+                if merger.settings_window.checkBox_4.isChecked():
+                    self.add_watermark(pdf_file)
+            for key, item in merger_instance.items():
+                _, _, files = item
+                for file in files:
+                    file.close()
+        else:
+            pdf_file = os.path.join(os.path.dirname(directory_with_draws),
+                                    f'{os.path.basename(directory_with_draws)[:-14]}.pdf')
+            with open(pdf_file, 'wb') as pdf:
+                merger_instance.write(pdf)
+            for file in merger_instance.inputs:
+                file[0].close()
+            if merger.settings_window.checkBox_4.isChecked():
+                self.add_watermark(pdf_file)
+
+        return pdf_file
+
+    def create_merger_instance(self, directory, files):
+        #  если нужно разбиваем файлы или сливаем всё в один
+        if merger.settings_window.checkBox_5.isChecked():
+            merger_instance = {595: ["A4", PyPDF2.PdfFileWriter(), []], 841: ["A3", PyPDF2.PdfFileWriter(), []],
+                               1190: ["A2", PyPDF2.PdfFileWriter(), []], 1683: ["A1", PyPDF2.PdfFileWriter(), []]}
+        else:
+            merger_instance = PyPDF2.PdfFileMerger()
         for filename in files:
-            merger_pdf.append(fileobj=open(os.path.join(directory, filename), 'rb'))
+            file = open(os.path.join(directory, filename), 'rb')
+            merger_pdf_reader = PyPDF2.PdfFileReader(file)
+            if type(merger_instance) == dict:
+                for page in merger_pdf_reader.pages:
+                    size = int(sorted(page.mediaBox[2:])[0])
+                    merger_instance[size][1].addPage(page)
+                    merger_instance[size][2].append(file)
+            else:
+                merger_instance.append(fileobj=file)
             self.increase_step.emit(True)
             self.status.emit(f'Сливание {filename}')
         if merger.settings_window.checkBox_5.isChecked():
-            input_pages = sorted([(i, i.pagedata['/MediaBox'][2:]) for i in merger_pdf.pages], key=itemgetter(1))
-            merger_pdf.pages = [i[0] for i in input_pages]
-        pdf_file = os.path.join(os.path.dirname(directory), f'{os.path.basename(directory)}.pdf')
-        with open(pdf_file, 'wb') as pdf:
-            merger_pdf.write(pdf)
-        if merger.settings_window.checkBox_4.isChecked():
-            self.add_watermark(pdf_file)
-        for file in merger_pdf.inputs:
-            file[0].close()
-        return pdf_file
+            merger_instance = {key: value for key, value in merger_instance.items() if
+                               value[1].getNumPages()}
+        return merger_instance
 
     def add_watermark(self, pdf_file):
         image = merger.settings_window.lineEdit_3.text()
@@ -968,6 +1047,7 @@ class RecursionThread(QThread):
     status = pyqtSignal(str)
     finished = pyqtSignal(list, list, bool)
     buttons_enable = pyqtSignal(bool)
+    errors = pyqtSignal(str)
 
     def __init__(self, specification, draws_in_specification, data_base_files, only_one_specification, refresh):
         self.draw_list = []
@@ -978,6 +1058,7 @@ class RecursionThread(QThread):
         self.only_one_specification = only_one_specification
         self.draws_in_specification = draws_in_specification
         self.data_base_files = data_base_files
+        self.error = 1
         QThread.__init__(self)
 
     def run(self):
@@ -1027,7 +1108,14 @@ class RecursionThread(QThread):
         else:
             if len(draw) > 1:
                 draw = [i for i in draw if i.endswith(extension)]
-        return draw
+        if os.path.exists(draw[0]):
+            return draw
+        else:
+            if self.error == 0:  # print this message only once
+                self.errors.emit('Некоторые пути в базе являются недействительным,'
+                                 'обновите базу данных')
+                self.error += 1
+            return
 
 
 if __name__ == '__main__':

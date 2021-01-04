@@ -1,4 +1,5 @@
 click==7.1.2
+PyMuPDF==1.18.1
 PyPDF2==1.26.0
 PyQt5==5.13.2
 PyQt5-sip==12.8.1

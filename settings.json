@@ -26,5 +26,6 @@
             170,
             170
           ],
-  "sort_files": false
+  "sort_files": false,
+  "auto_save_folder": false
 }
