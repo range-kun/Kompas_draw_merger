@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-#|Фамилия
 
 import pythoncom
 from win32com.client import Dispatch, gencache
@@ -25,11 +24,11 @@ def get_kompas_api5():
 
 
 def set_converter(app, kompas_object):
-    iConverter = app.Converter(kompas_object.ksSystemPath(5) + "\Pdf2d.dll")  # интерфейс для сохранения в PDF
+    iConverter = app.Converter(kompas_object.ksSystemPath(5) + r"\Pdf2d.dll")  # интерфейс для сохранения в PDF
     converter_parameters_module = gencache.EnsureModule("{31EBF650-BD38-43EC-892B-1F8AC6C14430}", 0, 1, 0)
-    converter_parameters = converter_parameters_module.IPdf2dParam \
-        (iConverter.ConverterParameters(0)._oleobj_.QueryInterface
-         (converter_parameters_module.IPdf2dParam.CLSID, pythoncom.IID_IDispatch))
+    converter_parameters = converter_parameters_module.\
+        IPdf2dParam(iConverter.ConverterParameters(0)._oleobj_.
+                    QueryInterface(converter_parameters_module.IPdf2dParam.CLSID, pythoncom.IID_IDispatch))
     converter_parameters.CutByFormat = True  # обрезать по формату
     converter_parameters.EmbedFonts = True  # встроить шрифты
     converter_parameters.GrayScale = True  # оттенки серого
@@ -39,34 +38,26 @@ def set_converter(app, kompas_object):
     converter_parameters.Scale = 1.0  # масшта
     return iConverter
 
+
 def get_kompas_settings(application, kompas_object):
     app = application.Application
-    iConverter = set_converter(app, kompas_object)
+    i_converter = set_converter(app, kompas_object)
     docs = app.Documents
-    return app, iConverter, docs
+    return app, i_converter, docs
 
-def cdw_to_pdf(files, directory_pdf):
-    kompas_api7_module, application, const = get_kompas_api7()
-    kompas6_api5_module, kompas_object, kompas6_constants = get_kompas_api5()
-    app = application.Application
-    iConverter = set_converter(app, kompas_object)
-    number = 0
-    for file in files:
-        number += 1
-        iConverter.Convert(file, directory_pdf + "\\" +
-                        f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
 
 def get_right_api(file, docs, kompas_api7_module):
     doc = docs.Open(file, False, False)  # открываем документ, в невидимом режиме для записи
     if os.path.splitext(file)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
-        doc2D = kompas_api7_module.IKompasDocument2D(doc._oleobj_.QueryInterface
+        doc2d = kompas_api7_module.IKompasDocument2D(doc._oleobj_.QueryInterface
                                                      (kompas_api7_module.IKompasDocument2D.CLSID,
                                                       pythoncom.IID_IDispatch))
     else:  # если спецификация, то используем интерфейс для спецификации
-        doc2D = kompas_api7_module.ISpecificationDocument(
+        doc2d = kompas_api7_module.ISpecificationDocument(
             doc._oleobj_.QueryInterface
             (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
-    return doc, doc2D
+    return doc, doc2d
+
 
 def date_to_seconds(date_string):
     if len(date_string.split('.')[-1]) == 2:
@@ -75,6 +66,7 @@ def date_to_seconds(date_string):
         date_string = '.'.join(new_date)
     struct_date = time.strptime(date_string, "%d.%m.%Y")
     return time.mktime(struct_date)
+
 
 def get_draws_from_specification(file, only_document_list=False):
     files = {}
@@ -119,10 +111,7 @@ def get_draws_from_specification(file, only_document_list=False):
         files["Сборочные единицы"] = assembly_draws
     return files, application
 
+
 def exit_kompas(app):
     if not app.Visible:  # если компас в невидимом режиме
         app.Quit()  # закрываем компас
-
-
-
-

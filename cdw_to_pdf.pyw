@@ -393,6 +393,7 @@ class Ui_Merger(MakeWidgets):
 
     def closeEvent(self, event):
         if self.appl:
+            self.status.emit(f'Закрытие Kompas')
             kompas_api.exit_kompas(self.appl)
         event.accept()
 
@@ -741,6 +742,7 @@ class MyBrandThread(QThread):
         os.system(f'explorer "{(os.path.normpath(os.path.dirname(single_draw_dir)))}"')
         if not merger.settings_window.checkBox_5.isChecked():
             os.startfile(pdf_file)
+        self.status.emit(f'Закрытие Kompas')
         kompas_api.exit_kompas(self.appl)
         self.status.emit('Слитие успешно завершено')
 
@@ -797,6 +799,7 @@ class MyBrandThread(QThread):
         return base_pdf_dir, single_draw_dir, main_name
 
     def cdw_to_pdf(self, files, single_draw_dir):
+        self.status.emit('Открытие Kompas')
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
         self.appl = kompas_object
@@ -896,11 +899,13 @@ class FilterThread(QThread):
 
     def run(self):
         self.filter_draws(self.draw_list, **self.filters)
+        self.status.emit(f'Закрытие Kompas')
         kompas_api.exit_kompas(self.appl)
         self.finished.emit(self.draw_list, self.filter_only)
 
     def filter_draws(self, files, *, date_1=None, date_2=None,
                      constructor_name=None, checker_name=None):
+        self.status.emit("Открытие Kompas")
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         self.appl = application
         app = application.Application
@@ -994,6 +999,7 @@ class DataBaseThread(QThread):
         double_files = [(key, [i for i in v if i.endswith('cdw')], [i for i in v if i.endswith('spw')])
                         for key, v in self.files_dict.items() if len(v) > 1]
         if any(len(i[1]) > 1 or len(i[2]) > 1 for i in double_files):
+            self.status.emit(f'Открытие Kompas')
             kompas_api7_module, application, const = kompas_api.get_kompas_api7()
             self.appl = application
             app = application.Application
@@ -1016,6 +1022,7 @@ class DataBaseThread(QThread):
                     self.files_dict[key].extend(temp_files)
                 else:
                     self.files_dict[key] = temp_files
+            self.status.emit(f'Закрытие Kompas')
             kompas_api.exit_kompas(self.appl)
 
     def get_right_path(self, same_double_paths, const, kompas_api7_module, docs):
@@ -1065,6 +1072,7 @@ class RecursionThread(QThread):
         self.buttons_enable.emit(False)
         self.process_specification()
         if self.appl:
+            self.status.emit(f'Закрытие Kompas')
             kompas_api.exit_kompas(self.appl)
         self.finished.emit(self.missing_list, self.draw_list, self.refresh)
 
