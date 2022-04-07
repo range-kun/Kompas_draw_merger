@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
+import os
+import time
 
 import pythoncom
 from win32com.client import Dispatch, gencache
-import os
-import time
 
 
 def get_kompas_api7():
@@ -68,21 +68,27 @@ def date_to_seconds(date_string):
     return time.mktime(struct_date)
 
 
-def get_draws_from_specification(file, only_document_list=False):
+def get_draws_from_specification(spec_path: str, only_document_list=False):
     files = {}
     documentation_draws = []
     assembly_draws = []
     detail_draws = []
+
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     docs = app.Documents
-    doc = docs.Open(file, False, False)  # открываем документ, в невидимом режиме для записи
-    doc2d = kompas_api7_module.ISpecificationDocument(
-        doc._oleobj_.QueryInterface
-        (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
+    doc = docs.Open(spec_path, False, False)  # открываем документ, в невидимом режиме для записи
+    try:
+        doc2d = kompas_api7_module.ISpecificationDocument(
+            doc._oleobj_.QueryInterface
+            (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
+    except Exception:
+        return f"Ошибка при открытии спецификации {spec_path} \n"
+
     i_layout_sheet = doc2d.LayoutSheets.Item(0)
     oformlenie = i_layout_sheet.LayoutStyleNumber  # считываем номер оформления документа
     spc_descriptions = doc.SpecificationDescriptions
+
     if oformlenie == 17:  # 17 - работаем только в простой спецификации
         spc_description = spc_descriptions.Item(0)
         for i in spc_description.Objects:

@@ -1,23 +1,26 @@
 # -*- coding: utf-8 -*-
-import sys
+import itertools
+import json
 import os
 import queue
 import re
-import time
-import kompas_api
-import PyPDF2
 import shutil
-import pythoncom
-import itertools
-import json
-from win32com.client import Dispatch
-import win32com
-import fitz
+import sys
+import time
 from operator import itemgetter
-from Widgets_class import MakeWidgets
-from settings_window import SettingsWindow
+from tkinter import filedialog
+
+import PyPDF2
+import fitz
+import pythoncom
+import win32com
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
+from win32com.client import Dispatch
+
+import kompas_api
+from Widgets_class import MakeWidgets
+from settings_window import SettingsWindow
 
 
 def except_hook(cls, exception, traceback):
@@ -204,7 +207,7 @@ class Ui_Merger(MakeWidgets):
             if self.radio_button_2.isChecked():
                 search_path = self.check_data_base_file(search_path)
             else:
-                self.error('Укажите папку для поиска с файламиа, а не файл')
+                self.send_error('Укажите папку для поиска с файламиа, а не файл')
         else:
             draw_list = self.get_all_files_in_folder(search_path)
             if draw_list:
@@ -226,13 +229,19 @@ class Ui_Merger(MakeWidgets):
         self.listWidget.setCurrentRow(current_row + 1)
 
     def choose_specification(self):
-        filename = [QtWidgets.QFileDialog.getOpenFileName(self, "Выбрать файл", ".",
-                                                          "Спецификация(*.spw)")[0]][0]
-        if filename:
-            response = self.check_specification(filename)
+        file_path = filedialog.askopenfilename(
+            initialdir="",
+            title="Выбор cпецификации",
+            filetypes=(("spec", "*.spw"),)
+        )
+        if file_path:
+            response = self.check_specification(file_path)
             if not response:
                 return
-            self.line_edit_2.setText(filename)
+            elif type(response) == str:
+                self.send_error(response)
+                return
+            self.line_edit_2.setText(file_path)
             cdw_file = self.line_edit.toPlainText()
             if cdw_file:
                 if cdw_file == self.search_path and self.data_base_files:
@@ -240,17 +249,21 @@ class Ui_Merger(MakeWidgets):
                 else:
                     self.get_data_base()
 
-    def check_specification(self, filename):
-        if filename.endswith('.spw') and os.path.isfile(filename):
-            draws_in_specification, self.appl = kompas_api.get_draws_from_specification(filename)
+    def check_specification(self, file_path: str):
+        if file_path.endswith('.spw') and os.path.isfile(file_path):
+            response = kompas_api.get_draws_from_specification(file_path)
+            if type(response) == str:  # ошибка при открытии спецификации
+                return response
+
+            draws_in_specification, self.appl = response
             if draws_in_specification:
                 self.draws_in_specification = draws_in_specification
-                self.specification_path = filename
+                self.specification_path = file_path
             else:
-                self.error('Спецификация пуста, как и вся наша жизнь')
+                self.send_error('Спецификация пуста, как и вся наша жизнь')
                 return
         else:
-            self.error('Указанный файл не является спецификацией или не существует')
+            self.send_error('Указанный файл не является спецификацией или не существует')
             return
         return 1
 
@@ -263,6 +276,8 @@ class Ui_Merger(MakeWidgets):
             response = self.check_specification(filename)
             if not response:
                 return
+            if type(response) == str:
+                self.send_error(response)  # ошибка при открытии спецификации
         self.start_recursion(refresh)
 
     def handle_specification_result(self, missing_list, draw_list, refresh):
@@ -292,7 +307,7 @@ class Ui_Merger(MakeWidgets):
         self.recursive_thread.buttons_enable.connect(self.switch_button_group)
         self.recursive_thread.finished.connect(self.handle_specification_result)
         self.recursive_thread.status.connect(self.statusbar.showMessage)
-        self.recursive_thread.errors.connect(self.error)
+        self.recursive_thread.errors.connect(self.send_error)
         self.recursive_thread.start()
 
     def change_checkbox_5_status(self):
@@ -322,14 +337,14 @@ class Ui_Merger(MakeWidgets):
                     with open(filename, 'w') as file:
                         file.write(missing_message)
                 except:
-                    self.error("Ошибка записи")
+                    self.send_error("Ошибка записи")
                     return
 
     def refresh_draws_in_list(self, refresh=False):
         if self.radio_button.isChecked():
             search_path = self.line_edit.toPlainText()
             if not search_path:
-                self.error('Укажите папку с чертежамиили')
+                self.send_error('Укажите папку с чертежамиили')
                 return
             draw_list = self.check_search_path(search_path)
             if not draw_list:
@@ -339,19 +354,22 @@ class Ui_Merger(MakeWidgets):
             if self.progress_step:
                 self.apply_filters(draw_list)
             else:
-                self.error('Обновление завершено')
+                self.send_error('Обновление завершено')
                 self.fill_list(draw_list=draw_list)
         else:
             search_path = self.line_edit.toPlainText()
             specification = self.line_edit_2.toPlainText()
             if not search_path:
-                self.error('Укажите папку с чертежамиили файл .json')
+                self.send_error('Укажите папку с чертежамиили файл .json')
                 return
             if not specification:
-                self.error('Укажите файл спецификации')
+                self.send_error('Укажите файл спецификации')
                 return
             response_1 = self.check_specification(specification)
             if not response_1:
+                return
+            if type(response_1) == str:
+                self.send_error(response_1)
                 return
             self.get_data_base(refresh=refresh)
 
@@ -376,7 +394,7 @@ class Ui_Merger(MakeWidgets):
         self.statusbar.showMessage('Филтрация успешно завршена')
         self.appl = None
         if not draw_list:
-            self.error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
+            self.send_error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
             self.current_progress = 0
             self.progressBar.setValue(self.current_progress)
             self.listWidget.clear()
@@ -406,7 +424,7 @@ class Ui_Merger(MakeWidgets):
             self.save_data_base()
             self.get_paths_to_specifications(refresh)
         else:
-            self.error('Нету файлов с обозначением в штампе')
+            self.send_error('Нету файлов с обозначением в штампе')
 
     def save_data_base(self):
         choice = QtWidgets.QMessageBox.question(self, 'База данных',
@@ -425,7 +443,7 @@ class Ui_Merger(MakeWidgets):
                 with open(filename, 'w') as file:
                     json.dump(self.data_base_files, file, ensure_ascii=False)
             except:
-                self.error("В базе данных имеются ошибки")
+                self.send_error("В базе данных имеются ошибки")
                 return
             self.line_edit.setText(filename)
             self.search_path = filename
@@ -439,7 +457,7 @@ class Ui_Merger(MakeWidgets):
             if filename:
                 self.load_data_base(filename)
             else:
-                self.error('Указанный файл не является файлом .json')
+                self.send_error('Указанный файл не является файлом .json')
 
     def load_data_base(self, filename, refresh=False):
         filename = filename or self.search_path
@@ -452,19 +470,19 @@ class Ui_Merger(MakeWidgets):
 
     def check_data_base_file(self, filename):
         if not os.path.exists(filename):
-            self.error('Указан несуществующий путь')
+            self.send_error('Указан несуществующий путь')
             return
         if not filename.endswith('.json'):
-            self.error('Указанный файл не является файлом .json')
+            self.send_error('Указанный файл не является файлом .json')
             return None
         with open(filename) as file:
             try:
                 self.data_base_files = json.load(file)
             except json.decoder.JSONDecodeError as e:
-                self.error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
+                self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
                 return None
             except UnicodeDecodeError:
-                self.error('Указана неверная кодировка файл, попытайтесь еще раз сгенерировать данные')
+                self.send_error('Указана неверная кодировка файл, попытайтесь еще раз сгенерировать данные')
                 return None
             else:
                 return 1
@@ -488,7 +506,7 @@ class Ui_Merger(MakeWidgets):
         if draw_list:
             return list(draw_list)
         else:
-            self.error('Нету файлов .cdw или .spw, в выбраной папке(ах) с указанными параметрами')
+            self.send_error('Нету файлов .cdw или .spw, в выбраной папке(ах) с указанными параметрами')
 
     def get_files_in_one_folder(self, folder):
         # sorting in the way so specification sheet is the first if .cdw and .spw files has the same name
@@ -500,7 +518,7 @@ class Ui_Merger(MakeWidgets):
 
     def check_lines(self):
         if self.radio_button.isChecked() and os.path.isfile(self.line_edit.toPlainText()):
-            self.error('Укажите папку для сливания')
+            self.send_error('Укажите папку для сливания')
             return
         elif self.radio_button_2.isChecked() and (self.search_path != self.line_edit.toPlainText()
                                                   or self.specification_path != self.line_edit_2.toPlainText()
@@ -530,7 +548,7 @@ class Ui_Merger(MakeWidgets):
     def merge_files_in_one(self):
         draws_list = self.get_items_in_list(self.listWidget)
         if not draws_list:
-            self.error('Нету файлов для слития')
+            self.send_error('Нету файлов для слития')
             return
         self.calculate_step(len(draws_list))
         self.switch_button_group(False)
@@ -546,7 +564,7 @@ class Ui_Merger(MakeWidgets):
         self.thread.buttons_enable.connect(self.switch_button_group)
         self.thread.increase_step.connect(self.increase_step)
         self.thread.kill_thread.connect(self.stop_merge_thread)
-        self.thread.errors.connect(self.error)
+        self.thread.errors.connect(self.send_error)
         self.thread.choose_folder.connect(self.choose_folder)
         self.thread.status.connect(self.statusbar.showMessage)
         self.thread.progress_bar.connect(self.progressBar.setValue)
@@ -586,9 +604,8 @@ class Ui_Merger(MakeWidgets):
                 file.setCheckState(QtCore.Qt.Unchecked)
 
     def add_file_to_list(self):
-        filename = [QtWidgets.QFileDialog.getOpenFileName(self, "Выбрать файл", ".",
-                                                          "Чертж(*.cdw);;"
-                                                          "Спецификация(*.spw)")[0]]
+        filename = [QtWidgets.QFileDialog.getOpenFileName(
+            self, "Выбрать файл", ".", "Чертж(*.cdw);;Спецификация(*.spw)")[0]]
         if filename[0]:
             self.fill_list(draw_list=filename)
             self.pushButton_5.setEnabled(True)
@@ -696,7 +713,7 @@ class Ui_Merger(MakeWidgets):
             else:
                 self.load_data_base(filename, refresh)
         else:
-            self.error('Укажите папку для поиска файлов')
+            self.send_error('Укажите папку для поиска файлов')
 
     def get_data_base_from_folder(self, files, refresh=False):
         self.calculate_step(len(files), get_data_base=True)
@@ -729,7 +746,7 @@ class MyBrandThread(QThread):
     def run(self):
         single_draw_dir, base_pdf_dir, main_name = self.create_folders()
         if not single_draw_dir and not base_pdf_dir:
-            self.errors.emit('Запись прервана, папка не была найдена')
+            self.send_errors.emit('Запись прервана, папка не была найдена')
             self.buttons_enable.emit(True)
             self.progress_bar.emit(0)
             self.kill_thread.emit()
@@ -870,7 +887,7 @@ class MyBrandThread(QThread):
         if not image or not position:
             return
         if not os.path.exists(image) or image == 'Стандартный путь из настроек не существует':
-            self.errors.emit(f'Путь к файлу с картинкой не существует')
+            self.send_errors.emit(f'Путь к файлу с картинкой не существует')
             return
         pdf_doc = fitz.open(pdf_file)  # open the PDF
         rect = fitz.Rect(position)  # where to put image: use upper left corner
@@ -880,7 +897,9 @@ class MyBrandThread(QThread):
             try:
                 page.insertImage(rect, filename=image, overlay=False)
             except ValueError:
-                self.errors.emit('Заданы неверные координаты, размещения картинки, водяной знак не был добавлен')
+                self.send_errors.emit(
+                    'Заданы неверные координаты, размещения картинки, водяной знак не был добавлен'
+                )
                 return
         pdf_doc.saveIncr()  # do an incremental save
 
@@ -1065,7 +1084,7 @@ class RecursionThread(QThread):
         self.only_one_specification = only_one_specification
         self.draws_in_specification = draws_in_specification
         self.data_base_files = data_base_files
-        self.error = 1
+        self.error = 0
         QThread.__init__(self)
 
     def run(self):
@@ -1091,31 +1110,46 @@ class RecursionThread(QThread):
                         self.draw_list.append(draw[0])
             else:
                 for item in value:
-                    draw = self.check_item(item, '.spw', drawisimo)
-                    if draw:
-                        if self.only_one_specification:
-                            self.draw_list.append(draw[0])
-                            draw_list, self.appl = kompas_api.get_draws_from_specification(draw[0])
-                            self.recursive_traversal(draw_list, draw[0])
-                        else:
-                            self.draw_list.append(draw[0])
-                            cdw_file, self.appl = kompas_api.get_draws_from_specification(draw[0], True)
-                            cdw_file = self.check_item(cdw_file[0], '.cdw', drawisimo)
-                            if cdw_file:
-                                self.draw_list.append(cdw_file[0])
+                    draw = self.check_item(item, file_extension='.spw', file_path=drawisimo)
+                    if not draw:
+                        continue
 
-    def check_item(self, item, extension, drawisimo):
+                    if self.only_one_specification:
+                        response = kompas_api.get_draws_from_specification(draw[0])
+                        if type(response) == str:  # ошибка при открытии спецификации
+                            self.missing_list.append(response)
+                            return
+
+                        draws_in_specification, self.appl = response
+                        self.recursive_traversal(draw_list, draw[0])
+                    else:
+                        self.draw_list.append(draw[0])
+                        response = kompas_api.get_draws_from_specification(
+                            draw[0],
+                            only_document_list=True
+                        )
+                        if type(response) == str:  # ошибка при открытии спецификации
+                            self.missing_list.append(response)
+                            return
+
+                        cdw_file, self.appl = response
+                        cdw_file = self.check_item(cdw_file[0], file_extension='.cdw', file_path=drawisimo)
+                        if cdw_file:
+                            self.draw_list.append(cdw_file[0])
+
+    def check_item(self, item, file_extension: str, file_path: str):
+        print(item, file_extension, file_path)
         try:
             draw = self.data_base_files[item[0].lower()]
         except KeyError:
-            spec_path = os.path.basename(drawisimo)
+            spec_path = os.path.basename(file_path)
             item = [item[0].upper(), item[1].capitalize().replace('\n', ' ')]
             new_item = (spec_path, ' - '.join(item))
             self.missing_list.append(new_item)
             return
         else:
             if len(draw) > 1:
-                draw = [i for i in draw if i.endswith(extension)]
+                draw = [i for i in draw if i.endswith(file_extension)]
         if os.path.exists(draw[0]):
             return draw
         else:

@@ -109,7 +109,7 @@ class MakeWidgets(QtWidgets.QMainWindow):
             array.append(name)
             widget.addItem(name)
         else:
-            self.error('Имя уже добавлено в список')
+            self.send_error('Имя уже добавлено в список')
 
     def make_menu(self):
         menu = self.menuBar()
@@ -123,7 +123,7 @@ class MakeWidgets(QtWidgets.QMainWindow):
             command.triggered.connect(item[1])
             pulldown.addAction(command)
 
-    def error(self, message):
+    def send_error(self, message):
         error_dialog = QtWidgets.QErrorMessage(self)
         error_dialog.setWindowModality(QtCore.Qt.WindowModal)
         error_dialog.showMessage(message)
