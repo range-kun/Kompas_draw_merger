@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import itertools
 import json
 import os
@@ -8,6 +10,7 @@ import shutil
 import sys
 import time
 from operator import itemgetter
+from typing import Optional
 from tkinter import filedialog
 
 import PyPDF2
@@ -255,7 +258,8 @@ class Ui_Merger(MakeWidgets):
             if type(response) == str:  # ошибка при открытии спецификации
                 return response
 
-            draws_in_specification, self.appl = response
+            draws_in_specification, self.appl, errors = response
+            self.missing_list.extend(errors)
             if draws_in_specification:
                 self.draws_in_specification = draws_in_specification
                 self.specification_path = file_path
@@ -283,7 +287,7 @@ class Ui_Merger(MakeWidgets):
     def handle_specification_result(self, missing_list, draw_list, refresh):
         self.statusbar.showMessage('Завершено получение файлов из спецификации')
         self.appl = None
-        self.missing_list = missing_list
+        self.missing_list.extend(missing_list)
         self.draw_list = draw_list
         if self.missing_list:
             self.print_out_missing_files()
@@ -300,7 +304,7 @@ class Ui_Merger(MakeWidgets):
                     self.switch_button_group(True)
 
     def start_recursion(self, refresh):
-        only_one_specification = self.checkBox_5.isChecked()
+        only_one_specification = not self.checkBox_5.isChecked()
         self.checkBox_5_status = 'Yes' if self.checkBox_5.isChecked() else 'No'
         self.recursive_thread = RecursionThread(self.specification_path, self.draws_in_specification,
                                                 self.data_base_files, only_one_specification, refresh)
@@ -323,19 +327,28 @@ class Ui_Merger(MakeWidgets):
             self.checkBox_4_current_status = 'No'
 
     def print_out_missing_files(self):
+        one_line_messages = []
+        for index, error in enumerate(self.missing_list):
+            if type(error) != str:
+                continue
+            del self.missing_list[index]
+            one_line_messages.append(error)
+
         grouped_list = itertools.groupby(self.missing_list, itemgetter(0))
         grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
         missing_message = '\n'.join(grouped_list)
         choice = QtWidgets.QMessageBox.question(self, 'Отсуствующие чертежи',
-                                                f"Не были найдены следующи чертежи:\n{missing_message},"
+                                                f"Не были найдены следующи чертежи:\n{missing_message}, {''.join(one_line_messages)}"
                                                 f"\nСохранить список?",
                                                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        self.missing_list = []
         if choice == QtWidgets.QMessageBox.Yes:
             filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
             if filename:
                 try:
                     with open(filename, 'w') as file:
                         file.write(missing_message)
+                        file.writelines(one_line_messages)
                 except:
                     self.send_error("Ошибка записи")
                     return
@@ -746,7 +759,7 @@ class MyBrandThread(QThread):
     def run(self):
         single_draw_dir, base_pdf_dir, main_name = self.create_folders()
         if not single_draw_dir and not base_pdf_dir:
-            self.send_errors.emit('Запись прервана, папка не была найдена')
+            self.errors.emit('Запись прервана, папка не была найдена')
             self.buttons_enable.emit(True)
             self.progress_bar.emit(0)
             self.kill_thread.emit()
@@ -977,7 +990,7 @@ class DataBaseThread(QThread):
 
     def run(self):
         self.buttons_enable.emit(False)
-        self.get_data_base()
+        self.create_data_base()
         self.progress_bar.emit(0)
         self.check_double_files()
         self.progress_bar.emit(0)
@@ -988,7 +1001,7 @@ class DataBaseThread(QThread):
             reset = False
         self.finished.emit(self.files_dict, reset, self.refresh)
 
-    def get_data_base(self):
+    def create_data_base(self):
         pythoncom.CoInitializeEx(0)
         shell = win32com.client.gencache.EnsureDispatch('Shell.Application', 0)  # подлкючаемся к винде
         dir_obj = shell.NameSpace(os.path.dirname(self.draw_list[0]))  # получаем объект папки виндовс шелл
@@ -1084,7 +1097,7 @@ class RecursionThread(QThread):
         self.only_one_specification = only_one_specification
         self.draws_in_specification = draws_in_specification
         self.data_base_files = data_base_files
-        self.error = 0
+        self.error = 1
         QThread.__init__(self)
 
     def run(self):
@@ -1100,64 +1113,98 @@ class RecursionThread(QThread):
         self.recursive_traversal(self.draws_in_specification)
 
     def recursive_traversal(self, draw_list, drawisimo=None):
+        # drawisimo берется не None если идет рекурсия
         drawisimo = drawisimo or self.specification_path
         self.status.emit(f'Обработка {os.path.basename(drawisimo)}')
-        for key, value in draw_list.items():
-            if key == 'Сборочные чертежи' or key == 'Детали':
-                for item in value:
-                    draw = self.check_item(item, '.cdw', drawisimo)
-                    if draw:
-                        self.draw_list.append(draw[0])
-            else:
-                for item in value:
-                    draw = self.check_item(item, file_extension='.spw', file_path=drawisimo)
-                    if not draw:
+
+        for group_name, draws_description in draw_list.items():
+            if group_name in ["Сборочные чертежи", "Детали"]:
+                for item in draws_description:
+                    cdw_file_path = self.fetch_draw_path(item, file_extension='.cdw', file_path=drawisimo)
+                    if cdw_file_path:
+                        self.draw_list.append(cdw_file_path)
+            else:  # сборочные единицы
+                for item in draws_description:
+                    spw_file_path = self.fetch_draw_path(item, file_extension='.spw', file_path=drawisimo)
+                    if not spw_file_path:
                         continue
 
+                    self.draw_list.append(spw_file_path)
                     if self.only_one_specification:
-                        response = kompas_api.get_draws_from_specification(draw[0])
-                        if type(response) == str:  # ошибка при открытии спецификации
-                            self.missing_list.append(response)
-                            return
-
-                        draws_in_specification, self.appl = response
-                        self.recursive_traversal(draw_list, draw[0])
-                    else:
-                        self.draw_list.append(draw[0])
                         response = kompas_api.get_draws_from_specification(
-                            draw[0],
+                            spw_file_path,
                             only_document_list=True
                         )
                         if type(response) == str:  # ошибка при открытии спецификации
                             self.missing_list.append(response)
-                            return
+                            continue
 
-                        cdw_file, self.appl = response
-                        cdw_file = self.check_item(cdw_file[0], file_extension='.cdw', file_path=drawisimo)
-                        if cdw_file:
-                            self.draw_list.append(cdw_file[0])
+                        cdw_file, self.appl, errors = response
+                        if errors:
+                            self.missing_list.extend(errors)
+                    else:
+                        response = kompas_api.get_draws_from_specification(spw_file_path)
+                        if type(response) == str:  # ошибка при открытии спецификации
+                            self.missing_list.append(response)
+                            continue
 
-    def check_item(self, item, file_extension: str, file_path: str):
-        print(item, file_extension, file_path)
+                        draws_in_specification, self.appl, errors = response
+                        if errors:
+                            self.missing_list.extend(errors)
+                        self.recursive_traversal(draws_in_specification, spw_file_path)
+
+    def fetch_draw_path(self, item: tuple[str, str], file_extension: str, file_path: str) -> Optional[str]:
+        draw_obozn, draw_name = item
         try:
-            draw = self.data_base_files[item[0].lower()]
+            draw_path = self.data_base_files[draw_obozn.lower()]
         except KeyError:
-            spec_path = os.path.basename(file_path)
-            item = [item[0].upper(), item[1].capitalize().replace('\n', ' ')]
-            new_item = (spec_path, ' - '.join(item))
-            self.missing_list.append(new_item)
-            return
+            draw_path = []
+            if file_extension == ".spw":
+                draw_path = self.fetch_spec_group_path(draw_obozn)
+            if file_extension == ".cdw" or not draw_path:
+                spec_path = os.path.basename(file_path)
+                missing_draw = [draw_obozn.upper(), draw_name.capitalize().replace('\n', ' ')]
+                missing_draw_info = (spec_path, ' - '.join(missing_draw))
+                self.missing_list.append(missing_draw_info)
+                return
+        if len(draw_path) > 1:
+            draw_path = [i for i in draw_path if i.endswith(file_extension)]
+
+        if os.path.exists(draw_path[0]):
+            return draw_path[0]
         else:
-            if len(draw) > 1:
-                draw = [i for i in draw if i.endswith(file_extension)]
-        if os.path.exists(draw[0]):
-            return draw
-        else:
-            if self.error == 0:  # print this message only once
+            if self.error == 1:  # print this message only once
                 self.errors.emit('Некоторые пути в базе являются недействительным,'
                                  'обновите базу данных')
                 self.error += 1
             return
+
+    def fetch_spec_group_path(self, spec_obozn: str) -> Optional[str]:
+
+        mirror_obozn = spec_obozn + "-01"
+        db_other = spec_obozn + mirror_obozn
+        spec_path = self.data_base_files.get(db_other)
+        if spec_path:
+            return spec_path
+
+        draw_info = re.search(r"(.+)(?:-)(0[13579][а-яёa]?$)", spec_obozn, re.I)
+        if not draw_info:
+            return
+        obozn, execution = draw_info.groups()
+        last_symbol = ""
+        if not execution[:-1].isdigit():  # если есть буква в конце
+            last_symbol = execution[-1]
+            execution = execution[:-1]
+
+        # чертежи идут только с четными номерами, парсим нечетные
+        number_of_execution = int(execution) - 1
+        execution = ""
+        if number_of_execution:
+            execution = f"-0{number_of_execution}" + last_symbol
+
+        obozn += execution
+        spec_path = self.data_base_files.get(obozn.strip())
+        return spec_path
 
 
 if __name__ == '__main__':

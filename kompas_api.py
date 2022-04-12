@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import os
 import time
+import re
 
 import pythoncom
 from win32com.client import Dispatch, gencache
@@ -69,15 +72,17 @@ def date_to_seconds(date_string):
 
 
 def get_draws_from_specification(spec_path: str, only_document_list=False):
-    files = {}
-    documentation_draws = []
-    assembly_draws = []
-    detail_draws = []
-
+    files: dict[str: list[tuple[str, str]]] = {}
+    documentation_draws: list[tuple[str, str]] = []
+    assembly_draws: list[tuple[str, str]] = []
+    detail_draws: list[tuple[str, str]] = []
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
+    app.HideMessage = const.ksHideMessageYes
     docs = app.Documents
     doc = docs.Open(spec_path, False, False)  # открываем документ, в невидимом режиме для записи
+    errors: list[str] = []
+
     try:
         doc2d = kompas_api7_module.ISpecificationDocument(
             doc._oleobj_.QueryInterface
@@ -101,12 +106,20 @@ def get_draws_from_specification(spec_path: str, only_document_list=False):
                     size = i.Columns.Column(1, 1, 0).Text.Str.strip().lower()
                 except AttributeError:
                     size = None
+
                 if i.Section == 5:
                     documentation_draws.append((obozn, name))
                     if only_document_list:
-                        return documentation_draws, application
-                if i.Section == 15:
+                        return documentation_draws, application, errors
+
+                elif i.Section == 15:
+                    if is_detail(obozn):
+                        message = f"\nВозможно указана деталь в качестве спецификации " \
+                                  f"-> {spec_path} ||| {obozn} \n"
+                        errors.append(message)
+                        continue
                     assembly_draws.append((obozn, name))
+
                 elif i.Section == 20 and size != 'б/ч' and size != 'бч':
                     detail_draws.append((obozn, name))
     if documentation_draws:
@@ -115,9 +128,16 @@ def get_draws_from_specification(spec_path: str, only_document_list=False):
         files['Детали'] = detail_draws
     if assembly_draws:
         files["Сборочные единицы"] = assembly_draws
-    return files, application
+    app.HideMessage = const.ksHideMessageNo
+    return files, application, errors
 
 
 def exit_kompas(app):
     if not app.Visible:  # если компас в невидимом режиме
         app.Quit()  # закрываем компас
+
+
+def is_detail(obozn: str) -> bool:
+    detail_group = re.match(r".+\.\d[1-9][А-Я]?(?:-0[1-9])?[А-Я]?$", obozn.strip(), re.I)
+    if detail_group:
+        return True
