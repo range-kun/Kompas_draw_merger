@@ -30,12 +30,12 @@ def except_hook(cls, exception, traceback):
     sys.__excepthook__(cls, exception, traceback)
 
 
-class Ui_Merger(MakeWidgets):
-    def __init__(self, parent=None):
+class UiMerger(MakeWidgets):
+    def __init__(self):
         MakeWidgets.__init__(self, parent=None)
         self.kompas_ext = ['.cdw', '.spw']
         self.setFixedSize(929, 646)
-        self.setupUi(self)
+        self.setup_ui()
         self.search_path = None
         self.current_progress = 0
         self.progress_step = 0
@@ -45,10 +45,10 @@ class Ui_Merger(MakeWidgets):
         self.missing_list = []
         self.draw_list = []
         self.appl = None
-        self.checkBox_4_status = 'Yes'
-        self.checkBox_4_current_status = 'Yes'
-        self.checkBox_5_status = 'No'
-        self.checkBox_5_current_status = 'No'
+        self.bypassing_folders_inside_checkbox_status = 'Yes'
+        self.bypassing_folders_inside_checkbox_current_status = 'Yes'
+        self.bypassing_sub_assemblies_chekbox_status = 'No'
+        self.bypassing_sub_assemblies_chekbox_current_status = 'No'
         self.thread = None
         self.data_base_thread = None
         self.data_base_files = None
@@ -57,8 +57,8 @@ class Ui_Merger(MakeWidgets):
         self.draws_in_specification = {}
         self.recursive_thread = None
 
-    def setupUi(self, Merger):
-        Merger.setObjectName("Merger")
+    def setup_ui(self):
+        self.setObjectName("Merger")
         font = QtGui.QFont()
         sizepolicy = \
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Ignored)
@@ -68,9 +68,9 @@ class Ui_Merger(MakeWidgets):
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         font.setFamily("Arial")
         font.setPointSize(12)
-        Merger.setFont(font)
+        self.setFont(font)
 
-        self.centralwidget = QtWidgets.QWidget(Merger)
+        self.centralwidget = QtWidgets.QWidget(self)
         self.centralwidget.setObjectName("centralwidget")
         self.gridLayoutWidget = QtWidgets.QWidget(self.centralwidget)
         self.gridLayoutWidget.setGeometry(QtCore.QRect(10, 10, 906, 611))
@@ -79,83 +79,142 @@ class Ui_Merger(MakeWidgets):
         self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
         self.gridLayout.setContentsMargins(0, 0, 0, 0)
 
-        self.pushButton = self.make_button(text='Выделить все', font=font, command=self.select_all,
-                                           size_policy=sizepolicy_button)
-        self.gridLayout.addWidget(self.pushButton, 10, 0, 1, 1)
+        self.select_all_button = self.make_button(
+            text='Выделить все',
+            font=font, command=self.select_all,
+            size_policy=sizepolicy_button
+        )
+        self.gridLayout.addWidget(self.select_all_button, 10, 0, 1, 1)
 
-        self.pushButton_2 = self.make_button(text="Снять выделение", font=font, command=self.unselect_all,
-                                             size_policy=sizepolicy_button)
-        self.gridLayout.addWidget(self.pushButton_2, 10, 1, 1, 1)
+        self.remove_selection_button = self.make_button(
+            text="Снять выделение",
+            font=font, command=self.unselect_all,
+            size_policy=sizepolicy_button
+        )
+        self.gridLayout.addWidget(self.remove_selection_button, 10, 1, 1, 1)
 
-        self.pushButton_3 = self.make_button(text="Добавить файл в список", font=font,
-                                             command=self.add_file_to_list)
-        self.gridLayout.addWidget(self.pushButton_3, 10, 2, 1, 1)
+        self.add_file_to_list_button = self.make_button(
+            text="Добавить файл в список",
+            font=font,
+            command=self.add_file_to_list
+        )
+        self.gridLayout.addWidget(self.add_file_to_list_button, 10, 2, 1, 1)
 
-        self.pushButton_4 = self.make_button(text="Добавить папку в список", font=font,
-                                             command=self.add_folder_to_list)
-        self.gridLayout.addWidget(self.pushButton_4, 10, 3, 1, 1)
+        self.add_folder_to_list_button = self.make_button(
+            text="Добавить папку в список", font=font,
+            command=self.add_folder_to_list
+        )
+        self.gridLayout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
 
-        self.pushButton_5 = self.make_button(text="Склеить файлы", font=font, command=self.check_lines)
-        self.gridLayout.addWidget(self.pushButton_5, 13, 0, 1, 4)
+        self.merge_files_button = self.make_button(
+            text="Склеить файлы",
+            font=font,
+            command=self.check_lines
+        )
+        self.gridLayout.addWidget(self.merge_files_button, 13, 0, 1, 4)
 
-        self.pushButton_6 = self.make_button(text="Выбор папки \n с чертежами для поиска", font=font,
-                                             command=self.choose_initial_folder)
-        self.gridLayout.addWidget(self.pushButton_6, 1, 2, 1, 1)
+        self.choose_folder_button = self.make_button(
+            text="Выбор папки \n с чертежами для поиска",
+            font=font,
+            command=self.choose_initial_folder
+        )
+        self.gridLayout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
 
-        self.pushButton_7 = self.make_button(text="Очистить спискок и выбор папки для поиска", font=font,
-                                             command=self.clear_data)
-        self.gridLayout.addWidget(self.pushButton_7, 4, 0, 1, 2)
+        self.clear_draw_list_button = self.make_button(
+            text="Очистить спискок и выбор папки для поиска",
+            font=font,
+            command=self.clear_data
+        )
+        self.gridLayout.addWidget(self.clear_draw_list_button, 4, 0, 1, 2)
 
-        self.pushButton_8 = self.make_button(text="Дополнительные настройки", font=font,
-                                             command=self.show_settings)
-        self.gridLayout.addWidget(self.pushButton_8, 11, 0, 1, 2)
+        self.additional_settings_button = self.make_button(
+            text="Дополнительные настройки",
+            font=font,
+            command=self.show_settings
+        )
+        self.gridLayout.addWidget(self.additional_settings_button, 11, 0, 1, 2)
 
-        self.pushButton_9 = self.make_button(text='Обновить список файлов для склеивания', font=font,
-                                             command=self.refresh_draws_in_list)
-        self.gridLayout.addWidget(self.pushButton_9, 4, 2, 1, 2)
+        self.refresh_draw_list_button = self.make_button(
+            text='Обновить список файлов для склеивания',
+            font=font,
+            command=self.refresh_draws_in_list
+        )
+        self.gridLayout.addWidget(self.refresh_draw_list_button, 4, 2, 1, 2)
 
-        self.pushButton_10 = self.make_button(text='Выбор файла\n с базой чертежей', font=font, enabled=False,
-                                              command=self.get_data_base_path)
-        self.gridLayout.addWidget(self.pushButton_10, 1, 3, 1, 1)
+        self.choose_data_base_button = self.make_button(
+            text='Выбор файла\n с базой чертежей',
+            font=font, enabled=False,
+            command=self.get_data_base_path
+         )
+        self.gridLayout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
-        self.pushButton_11 = self.make_button(text='Выбор \nспецификации', font=font, enabled=False,
-                                              command=self.choose_specification)
-        self.gridLayout.addWidget(self.pushButton_11, 2, 2, 1, 1)
+        self.choose_specification_button = self.make_button(
+            text='Выбор \nспецификации',
+            font=font,
+            enabled=False,
+            command=self.choose_specification
+        )
+        self.gridLayout.addWidget(self.choose_specification_button, 2, 2, 1, 1)
 
-        self.pushButton_13 = self.make_button(text='Сохранить \n базу чертежей', font=font, enabled=False,
-                                              command=self.apply_data_base_save)
-        self.gridLayout.addWidget(self.pushButton_13, 2, 3, 1, 1)
+        self.save_data_base_file_button = self.make_button(
+            text='Сохранить \n базу чертежей',
+            font=font, enabled=False,
+            command=self.apply_data_base_save
+        )
+        self.gridLayout.addWidget(self.save_data_base_file_button, 2, 3, 1, 1)
 
-        self.checkBox_3 = self.make_checkbox(font=font, text='Удалить однодетальные pdf-чертежи по окончанию',
-                                             activate=True)
-        self.gridLayout.addWidget(self.checkBox_3, 11, 2, 1, 2)
+        self.delete_single_draws_after_merge_checkbox = self.make_checkbox(
+            font=font,
+            text='Удалить однодетальные pdf-чертежи по окончанию',
+            activate=True
+        )
+        self.gridLayout.addWidget(self.delete_single_draws_after_merge_checkbox, 11, 2, 1, 2)
 
-        self.checkBox_4 = self.make_checkbox(font=font, text='С обходом всех папок внутри', activate=True,
-                                             command=self.change_checkbox_4_status)
-        self.gridLayout.addWidget(self.checkBox_4, 3, 3, 1, 1)
+        self.bypassing_folders_inside_checkbox = self.make_checkbox(
+            font=font,
+            text='С обходом всех папок внутри',
+            activate=True,
+            command=self.change_bypassing_folders_inside_checkbox_status
+        )
+        self.gridLayout.addWidget(self.bypassing_folders_inside_checkbox, 3, 3, 1, 1)
 
-        self.checkBox_5 = self.make_checkbox(font=font, text='С поиском по подсборкам',
-                                             command=self.change_checkbox_5_status)
-        self.checkBox_5.setEnabled(False)
-        self.gridLayout.addWidget(self.checkBox_5, 3, 1, 1, 1)
+        self.bypassing_sub_assemblies_chekbox = self.make_checkbox(
+            font=font,
+            text='С поиском по подсборкам',
+            command=self.change_bypassing_sub_assemblies_chekbox_status
+        )
+        self.bypassing_sub_assemblies_chekbox.setEnabled(False)
+        self.gridLayout.addWidget(self.bypassing_sub_assemblies_chekbox, 3, 1, 1, 1)
 
-        self.line_edit = self.make_text_edit(font=font, placeholder="Выберите папку с файлами в формате .spw или"
-                                                                    " .cdw", size_policy=sizepolicy)
-        self.gridLayout.addWidget(self.line_edit, 1, 0, 1, 2)
+        self.source_of_draws_field = self.make_text_edit(
+            font=font,
+            placeholder="Выберите папку с файлами в формате .spw или .cdw",
+            size_policy=sizepolicy
+        )
+        self.gridLayout.addWidget(self.source_of_draws_field, 1, 0, 1, 2)
 
-        self.line_edit_2 = self.make_text_edit(font=font, placeholder="Укажите путь до файла со спецификацией"
-                                                                      " .sdw", size_policy=sizepolicy)
-        self.line_edit_2.setEnabled(False)
-        self.gridLayout.addWidget(self.line_edit_2, 2, 0, 1, 2)
+        self.path_to_spec_field = self.make_text_edit(
+            font=font,
+            placeholder="Укажите путь до файла со спецификацией .sdw",
+            size_policy=sizepolicy
+        )
+        self.path_to_spec_field.setEnabled(False)
+        self.gridLayout.addWidget(self.path_to_spec_field, 2, 0, 1, 2)
 
-        self.radio_button = self.make_radio_button(text='Поиск по папке', font=font,
-                                                   command=self.choose_search_way)
-        self.radio_button.setChecked(True)
-        self.gridLayout.addWidget(self.radio_button, 3, 2, 1, 1)
+        self.serch_in_folder_radio_button = self.make_radio_button(
+            text='Поиск по папке',
+            font=font,
+            command=self.choose_search_way
+        )
+        self.serch_in_folder_radio_button.setChecked(True)
+        self.gridLayout.addWidget(self.serch_in_folder_radio_button, 3, 2, 1, 1)
 
-        self.radio_button_2 = self.make_radio_button(text='Поиск по спецификации', font=font,
-                                                     command=self.choose_search_way)
-        self.gridLayout.addWidget(self.radio_button_2, 3, 0, 1, 1)
+        self.search_by_spec_radio_button = self.make_radio_button(
+            text='Поиск по спецификации',
+            font=font,
+            command=self.choose_search_way
+        )
+        self.gridLayout.addWidget(self.search_by_spec_radio_button, 3, 0, 1, 1)
 
         self.horizontalLayout = QtWidgets.QHBoxLayout()
         self.gridLayout.addLayout(self.horizontalLayout, 8, 0, 1, 4)
@@ -167,27 +226,33 @@ class Ui_Merger(MakeWidgets):
         self.verticalLayout = QtWidgets.QVBoxLayout()
         self.horizontalLayout.addLayout(self.verticalLayout)
 
-        self.pushButton_14 = self.make_button(text='\n\n', size_policy=sizepolicy_button_2,
-                                              command=self.move_item_up)
-        self.pushButton_14.setIcon(QtGui.QIcon('img/arrow_up.png'))
-        self.pushButton_14.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_up_button = self.make_button(
+            text='\n\n',
+            size_policy=sizepolicy_button_2,
+            command=self.move_item_up
+        )
+        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
+        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
 
-        self.pushButton_15 = self.make_button(text='\n\n', size_policy=sizepolicy_button_2,
-                                              command=self.move_item_down)
-        self.pushButton_15.setIcon(QtGui.QIcon('img/arrow_down.png'))
-        self.pushButton_15.setIconSize(QtCore.QSize(50, 50))
-        self.verticalLayout.addWidget(self.pushButton_14)
-        self.verticalLayout.addWidget(self.pushButton_15)
+        self.move_line_down_button = self.make_button(
+            text='\n\n', size_policy=sizepolicy_button_2,
+            command=self.move_item_down
+        )
+        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
+        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
 
-        self.progressBar = QtWidgets.QProgressBar(self.gridLayoutWidget)
-        self.progressBar.setTextVisible(False)
-        self.gridLayout.addWidget(self.progressBar, 15, 0, 1, 4)
+        self.verticalLayout.addWidget(self.move_line_up_button)
+        self.verticalLayout.addWidget(self.move_line_down_button)
 
-        Merger.setCentralWidget(self.centralwidget)
-        self.statusbar = QtWidgets.QStatusBar(Merger)
-        self.statusbar.setObjectName("statusbar")
-        Merger.setStatusBar(self.statusbar)
-        QtCore.QMetaObject.connectSlotsByName(Merger)
+        self.progress_bar = QtWidgets.QProgressBar(self.gridLayoutWidget)
+        self.progress_bar.setTextVisible(False)
+        self.gridLayout.addWidget(self.progress_bar, 15, 0, 1, 4)
+
+        self.setCentralWidget(self.centralwidget)
+        self.status_bar = QtWidgets.QStatusBar(self)
+        self.status_bar.setObjectName("statusbar")
+        self.setStatusBar(self.status_bar)
+        QtCore.QMetaObject.connectSlotsByName(self)
 
     def choose_initial_folder(self):
         directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
@@ -195,8 +260,8 @@ class Ui_Merger(MakeWidgets):
             draw_list = self.check_search_path(directory)
             if not draw_list:
                 return
-            self.line_edit.setText(self.search_path)
-            if self.radio_button.isChecked():
+            self.source_of_draws_field.setText(self.search_path)
+            if self.serch_in_folder_radio_button.isChecked():
                 self.calculate_step(len(draw_list), filter_only=True)
                 if self.progress_step:
                     self.apply_filters(draw_list)
@@ -207,7 +272,7 @@ class Ui_Merger(MakeWidgets):
 
     def check_search_path(self, search_path):
         if os.path.isfile(search_path):
-            if self.radio_button_2.isChecked():
+            if self.search_by_spec_radio_button.isChecked():
                 search_path = self.check_data_base_file(search_path)
             else:
                 self.send_error('Укажите папку для поиска с файламиа, а не файл')
@@ -244,8 +309,8 @@ class Ui_Merger(MakeWidgets):
             elif type(response) == str:
                 self.send_error(response)
                 return
-            self.line_edit_2.setText(file_path)
-            cdw_file = self.line_edit.toPlainText()
+            self.path_to_spec_field.setText(file_path)
+            cdw_file = self.source_of_draws_field.toPlainText()
             if cdw_file:
                 if cdw_file == self.search_path and self.data_base_files:
                     self.get_paths_to_specifications()
@@ -273,7 +338,7 @@ class Ui_Merger(MakeWidgets):
 
     def get_paths_to_specifications(self, refresh=False):
         self.listWidget.clear()
-        filename = self.line_edit_2.toPlainText()
+        filename = self.path_to_spec_field.toPlainText()
         if not filename:
             return
         if filename != self.specification_path:
@@ -285,7 +350,7 @@ class Ui_Merger(MakeWidgets):
         self.start_recursion(refresh)
 
     def handle_specification_result(self, missing_list, draw_list, refresh):
-        self.statusbar.showMessage('Завершено получение файлов из спецификации')
+        self.status_bar.showMessage('Завершено получение файлов из спецификации')
         self.appl = None
         self.missing_list.extend(missing_list)
         self.draw_list = draw_list
@@ -304,27 +369,28 @@ class Ui_Merger(MakeWidgets):
                     self.switch_button_group(True)
 
     def start_recursion(self, refresh):
-        only_one_specification = not self.checkBox_5.isChecked()
-        self.checkBox_5_status = 'Yes' if self.checkBox_5.isChecked() else 'No'
+        only_one_specification = not self.bypassing_sub_assemblies_chekbox.isChecked()
+        self.bypassing_sub_assemblies_chekbox_status = 'Yes' \
+            if self.bypassing_sub_assemblies_chekbox.isChecked() else 'No'
         self.recursive_thread = RecursionThread(self.specification_path, self.draws_in_specification,
                                                 self.data_base_files, only_one_specification, refresh)
         self.recursive_thread.buttons_enable.connect(self.switch_button_group)
         self.recursive_thread.finished.connect(self.handle_specification_result)
-        self.recursive_thread.status.connect(self.statusbar.showMessage)
+        self.recursive_thread.status.connect(self.status_bar.showMessage)
         self.recursive_thread.errors.connect(self.send_error)
         self.recursive_thread.start()
 
-    def change_checkbox_5_status(self):
-        if self.checkBox_5.isChecked():
-            self.checkBox_5_current_status = 'Yes'
+    def change_bypassing_sub_assemblies_chekbox_status(self):
+        if self.bypassing_sub_assemblies_chekbox.isChecked():
+            self.bypassing_sub_assemblies_chekbox_current_status = 'Yes'
         else:
-            self.checkBox_5_current_status = 'No'
+            self.bypassing_sub_assemblies_chekbox_current_status = 'No'
 
-    def change_checkbox_4_status(self):
-        if self.checkBox_4.isChecked():
-            self.checkBox_4_current_status = 'Yes'
+    def change_bypassing_folders_inside_checkbox_status(self):
+        if self.bypassing_folders_inside_checkbox.isChecked():
+            self.bypassing_folders_inside_checkbox_current_status = 'Yes'
         else:
-            self.checkBox_4_current_status = 'No'
+            self.bypassing_folders_inside_checkbox_current_status = 'No'
 
     def print_out_missing_files(self):
         one_line_messages = []
@@ -337,10 +403,12 @@ class Ui_Merger(MakeWidgets):
         grouped_list = itertools.groupby(self.missing_list, itemgetter(0))
         grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
         missing_message = '\n'.join(grouped_list)
-        choice = QtWidgets.QMessageBox.question(self, 'Отсуствующие чертежи',
-                                                f"Не были найдены следующи чертежи:\n{missing_message}, {''.join(one_line_messages)}"
-                                                f"\nСохранить список?",
-                                                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        choice = QtWidgets.QMessageBox.question(
+            self, 'Отсуствующие чертежи',
+            f"Не были найдены следующи чертежи:\n{missing_message}, {''.join(one_line_messages)}"
+            f"\nСохранить список?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
         self.missing_list = []
         if choice == QtWidgets.QMessageBox.Yes:
             filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
@@ -354,8 +422,8 @@ class Ui_Merger(MakeWidgets):
                     return
 
     def refresh_draws_in_list(self, refresh=False):
-        if self.radio_button.isChecked():
-            search_path = self.line_edit.toPlainText()
+        if self.serch_in_folder_radio_button.isChecked():
+            search_path = self.source_of_draws_field.toPlainText()
             if not search_path:
                 self.send_error('Укажите папку с чертежамиили')
                 return
@@ -370,8 +438,8 @@ class Ui_Merger(MakeWidgets):
                 self.send_error('Обновление завершено')
                 self.fill_list(draw_list=draw_list)
         else:
-            search_path = self.line_edit.toPlainText()
-            specification = self.line_edit_2.toPlainText()
+            search_path = self.source_of_draws_field.toPlainText()
+            specification = self.path_to_spec_field.toPlainText()
             if not search_path:
                 self.send_error('Укажите папку с чертежамиили файл .json')
                 return
@@ -394,28 +462,28 @@ class Ui_Merger(MakeWidgets):
         draw_list = draw_list or self.get_items_in_list(self.listWidget)
         filters = self.get_all_filters()
         if not filter_only:
-            if filters == self.previous_filters and self.search_path == self.line_edit.toPlainText():
+            if filters == self.previous_filters and self.search_path == self.source_of_draws_field.toPlainText():
                 return 1
         self.previous_filters = filters
         self.filter_thread = FilterThread(draw_list, filters, filter_only)
-        self.filter_thread.status.connect(self.statusbar.showMessage)
+        self.filter_thread.status.connect(self.status_bar.showMessage)
         self.filter_thread.increase_step.connect(self.increase_step)
         self.filter_thread.finished.connect(self.handle_filter_results)
         self.filter_thread.start()
 
     def handle_filter_results(self, draw_list, filter_only=True):
-        self.statusbar.showMessage('Филтрация успешно завршена')
+        self.status_bar.showMessage('Филтрация успешно завршена')
         self.appl = None
         if not draw_list:
             self.send_error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
             self.current_progress = 0
-            self.progressBar.setValue(self.current_progress)
+            self.progress_bar.setValue(self.current_progress)
             self.listWidget.clear()
             self.switch_button_group(True)
             return
         if filter_only:
             self.current_progress = 0
-            self.progressBar.setValue(self.current_progress)
+            self.progress_bar.setValue(self.current_progress)
             self.fill_list(draw_list=draw_list)
             self.switch_button_group(True)
             return
@@ -429,7 +497,7 @@ class Ui_Merger(MakeWidgets):
         event.accept()
 
     def handle_data_base_results(self, data_base, appl, refresh=False):
-        self.statusbar.showMessage('Завершено получение Базы Данных')
+        self.status_bar.showMessage('Завершено получение Базы Данных')
         if appl:
             self.appl = None
         if data_base:
@@ -447,7 +515,7 @@ class Ui_Merger(MakeWidgets):
             self.apply_data_base_save()
         else:
             QtWidgets.QMessageBox.information(self, 'Отмена записи', 'Данные о связях хранятся в памяти')
-            self.pushButton_13.setEnabled(True)
+            self.save_data_base_file_button.setEnabled(True)
 
     def apply_data_base_save(self):
         filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
@@ -458,11 +526,11 @@ class Ui_Merger(MakeWidgets):
             except:
                 self.send_error("В базе данных имеются ошибки")
                 return
-            self.line_edit.setText(filename)
+            self.source_of_draws_field.setText(filename)
             self.search_path = filename
-        if self.pushButton_13.isEnabled():
+        if self.save_data_base_file_button.isEnabled():
             QtWidgets.QMessageBox.information(self, 'Запись данных', 'Запись данных успешно произведена')
-            self.pushButton_13.setEnabled(False)
+            self.save_data_base_file_button.setEnabled(False)
 
     def get_data_base_path(self):
         filename = QtWidgets.QFileDialog.getOpenFileName(self, "Загрузить файл", ".", "Json file(*.json)")[0]
@@ -478,7 +546,7 @@ class Ui_Merger(MakeWidgets):
         if not response:
             return
         self.search_path = filename
-        self.line_edit.setText(filename)
+        self.source_of_draws_field.setText(filename)
         self.get_paths_to_specifications(refresh)
 
     def check_data_base_file(self, filename):
@@ -491,7 +559,7 @@ class Ui_Merger(MakeWidgets):
         with open(filename) as file:
             try:
                 self.data_base_files = json.load(file)
-            except json.decoder.JSONDecodeError as e:
+            except json.decoder.JSONDecodeError:
                 self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
                 return None
             except UnicodeDecodeError:
@@ -505,8 +573,9 @@ class Ui_Merger(MakeWidgets):
         draw_list = []
         except_folders_list = self.get_items_in_list(self.settings_window.listWidget)
         self.listWidget.clear()
-        self.checkBox_4_status = 'Yes' if self.checkBox_4.isChecked() else 'No'
-        if self.checkBox_4.isChecked() or self.radio_button_2.isChecked():
+        self.bypassing_folders_inside_checkbox_status = 'Yes' \
+            if self.bypassing_folders_inside_checkbox.isChecked() else 'No'
+        if self.bypassing_folders_inside_checkbox.isChecked() or self.search_by_spec_radio_button.isChecked():
             for this_dir, dirs, files_here in os.walk(search_path, topdown=True):
                 dirs[:] = [d for d in dirs if d not in except_folders_list]
                 if os.path.basename(this_dir) in except_folders_list:
@@ -530,26 +599,35 @@ class Ui_Merger(MakeWidgets):
         return draw_list
 
     def check_lines(self):
-        if self.radio_button.isChecked() and os.path.isfile(self.line_edit.toPlainText()):
+        if self.serch_in_folder_radio_button.isChecked() and os.path.isfile(self.source_of_draws_field.toPlainText()):
             self.send_error('Укажите папку для сливания')
             return
-        elif self.radio_button_2.isChecked() and (self.search_path != self.line_edit.toPlainText()
-                                                  or self.specification_path != self.line_edit_2.toPlainText()
-                                                  or self.checkBox_5_current_status != self.checkBox_5_status):
-            choice = QtWidgets.QMessageBox.question(self, 'Изменения',
-                                                    f"Настройки поиска файлов и/или спецификация были изменены. "
-                                                    f"Обновить список файлов?",
-                                                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        elif self.search_by_spec_radio_button.isChecked() \
+                and (self.search_path != self.source_of_draws_field.toPlainText()
+                     or self.specification_path != self.path_to_spec_field.toPlainText()
+                     or self.bypassing_sub_assemblies_chekbox_current_status
+                     != self.bypassing_sub_assemblies_chekbox_status):
+            choice = QtWidgets.QMessageBox.question(
+                self,
+                "Изменения",
+                "Настройки поиска файлов и/или спецификация были изменены.Обновить список файлов?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
             if choice == QtWidgets.QMessageBox.Yes:
                 self.refresh_draws_in_list(refresh=True)
             else:
                 self.merge_files_in_one()
-        elif self.radio_button.isChecked() and (self.search_path != self.line_edit.toPlainText()
-                                                or self.checkBox_4_current_status != self.checkBox_4_status):
-            choice = QtWidgets.QMessageBox.question(self, 'Изменения',
-                                                    f"Путь или настройки поиска были изменены. "
-                                                    f"Обновить список файлов?",
-                                                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        elif self.serch_in_folder_radio_button.isChecked() and (
+                self.search_path != self.source_of_draws_field.toPlainText()
+                or self.bypassing_folders_inside_checkbox_current_status
+                != self.bypassing_folders_inside_checkbox_status
+        ):
+            choice = QtWidgets.QMessageBox.question(
+                self,
+                'Изменения',
+                "Путь или настройки поиска были изменены.Обновить список файлов?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
             if choice == QtWidgets.QMessageBox.Yes:
                 self.refresh_draws_in_list()
                 self.merge_files_in_one()
@@ -571,7 +649,7 @@ class Ui_Merger(MakeWidgets):
 
     def start_merge_process(self, draws_list):
         self.data_queue = queue.Queue()
-        search_path = self.search_path if self.radio_button.isChecked() \
+        search_path = self.search_path if self.serch_in_folder_radio_button.isChecked() \
             else os.path.dirname(self.specification_path)
         self.thread = MyBrandThread(draws_list, search_path, self.data_queue)
         self.thread.buttons_enable.connect(self.switch_button_group)
@@ -579,27 +657,27 @@ class Ui_Merger(MakeWidgets):
         self.thread.kill_thread.connect(self.stop_merge_thread)
         self.thread.errors.connect(self.send_error)
         self.thread.choose_folder.connect(self.choose_folder)
-        self.thread.status.connect(self.statusbar.showMessage)
-        self.thread.progress_bar.connect(self.progressBar.setValue)
+        self.thread.status.connect(self.status_bar.showMessage)
+        self.thread.progress_bar.connect(self.progress_bar.setValue)
         self.appl = None
         self.thread.start()
 
     def stop_merge_thread(self):
         self.switch_button_group(True)
-        self.statusbar.showMessage('Папка не выбрана, запись прервана')
+        self.status_bar.showMessage('Папка не выбрана, запись прервана')
         self.thread.terminate()
 
     def clear_data(self):
         self.search_path = None
         self.specification_path = None
-        self.line_edit.clear()
-        if self.radio_button.isChecked():
-            self.line_edit.setPlaceholderText("Выберите папку с файлами в формате .cdw или .spw")
+        self.source_of_draws_field.clear()
+        if self.serch_in_folder_radio_button.isChecked():
+            self.source_of_draws_field.setPlaceholderText("Выберите папку с файлами в формате .cdw или .spw")
         else:
             self.line_edit.setPlaceholderText("Выберите папку с файлами в формате "
                                               ".cdw или .spw \n или файл с базой данных в формате .json")
-        self.line_edit_2.clear()
-        self.line_edit_2.setPlaceholderText('Укажите путь до файла со спецификацией')
+        self.path_to_spec_field.clear()
+        self.path_to_spec_field.setPlaceholderText('Укажите путь до файла со спецификацией')
         self.listWidget.clear()
 
     def select_all(self):
@@ -621,7 +699,7 @@ class Ui_Merger(MakeWidgets):
             self, "Выбрать файл", ".", "Чертж(*.cdw);;Спецификация(*.spw)")[0]]
         if filename[0]:
             self.fill_list(draw_list=filename)
-            self.pushButton_5.setEnabled(True)
+            self.merge_files_button.setEnabled(True)
 
     def add_folder_to_list(self):
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
@@ -630,7 +708,7 @@ class Ui_Merger(MakeWidgets):
             draw_list = self.get_files_in_one_folder(folder)
         if draw_list:
             self.fill_list(draw_list=draw_list)
-            self.pushButton_5.setEnabled(True)
+            self.merge_files_button.setEnabled(True)
 
     @staticmethod
     def open_item(item):
@@ -642,16 +720,20 @@ class Ui_Merger(MakeWidgets):
         self.settings_window.exec_()
 
     def choose_search_way(self):
-        self.pushButton_10.setEnabled(self.radio_button_2.isChecked())
-        self.pushButton_11.setEnabled(self.radio_button_2.isChecked())
-        self.line_edit_2.setEnabled(self.radio_button_2.isChecked())
-        self.checkBox_5.setEnabled(self.radio_button_2.isChecked())
-        self.checkBox_4.setEnabled(self.radio_button.isChecked())
-        if self.radio_button.isChecked():
-            self.line_edit.setPlaceholderText("Выберите папку с файлами в формате .cdw или .spw")
+        self.choose_data_base_button.setEnabled(self.search_by_spec_radio_button.isChecked())
+        self.choose_specification_button.setEnabled(self.search_by_spec_radio_button.isChecked())
+        self.path_to_spec_field.setEnabled(self.search_by_spec_radio_button.isChecked())
+        self.bypassing_sub_assemblies_chekbox.setEnabled(self.search_by_spec_radio_button.isChecked())
+        self.bypassing_folders_inside_checkbox.setEnabled(self.serch_in_folder_radio_button.isChecked())
+        if self.serch_in_folder_radio_button.isChecked():
+            self.source_of_draws_field.setPlaceholderText(
+                "Выберите папку с файлами в формате .cdw или .spw"
+            )
         else:
-            self.line_edit.setPlaceholderText("Выберите папку с файлами в формате "
-                                              ".cdw или .spw \n или файл с базой данных в формате .json")
+            self.source_of_draws_field.setPlaceholderText(
+                "Выберите папку с файлами в формате "
+                ".cdw или .spw \n или файл с базой данных в формате .json"
+            )
 
     def calculate_step(self, number_of_files, filter_only=False, get_data_base=False):
         self.current_progress = 0
@@ -671,19 +753,20 @@ class Ui_Merger(MakeWidgets):
     def increase_step(self, start=True):
         if start:
             self.current_progress += self.progress_step
-            self.progressBar.setValue(self.current_progress)
+            self.progress_bar.setValue(self.current_progress)
 
     def switch_button_group(self, switch=None):
         if not switch:
-            switch = False if self.pushButton_5.isEnabled() else True
-        self.pushButton_5.setEnabled(switch)
-        self.pushButton_6.setEnabled(switch)
-        self.pushButton_8.setEnabled(switch)
-        self.pushButton_9.setEnabled(switch)
-        self.pushButton_10.setEnabled(switch)
-        self.pushButton_11.setEnabled(switch)
+            switch = False if self.merge_files_button.isEnabled() else True
+        self.merge_files_button.setEnabled(switch)
+        self.choose_folder_button.setEnabled(switch)
+        self.additional_settings_button.setEnabled(switch)
+        self.refresh_draw_list_button.setEnabled(switch)
+        self.choose_data_base_button.setEnabled(switch)
+        self.choose_specification_button.setEnabled(switch)
 
     def choose_folder(self, signal):
+        # signal отправляется из треда MyBrandThread
         dict_for_pdf = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".",
                                                                   QtWidgets.QFileDialog.ShowDirsOnly)
         if not dict_for_pdf:
@@ -699,7 +782,7 @@ class Ui_Merger(MakeWidgets):
             filters['date_1'] = date_1
             filters['date_2'] = date_2
         if self.settings_window.checkBox_2.isChecked():
-            if self.settings_window.radio_button_2.isChecked():
+            if self.settings_window.search_by_spec_radio_button.isChecked():
                 constructor_name = self.settings_window.lineEdit.text()
             else:
                 constructor_name = str(self.settings_window.comboBox.currentText())
@@ -717,8 +800,8 @@ class Ui_Merger(MakeWidgets):
     def get_data_base(self, files=None, refresh=False):
         if files:
             self.get_data_base_from_folder(files)
-        elif self.line_edit.toPlainText():
-            filename = self.line_edit.toPlainText()
+        elif self.source_of_draws_field.toPlainText():
+            filename = self.source_of_draws_field.toPlainText()
             if os.path.isdir(filename):
                 files = self.check_search_path(filename)
                 if files:
@@ -733,8 +816,8 @@ class Ui_Merger(MakeWidgets):
         self.data_base_thread = DataBaseThread(files, refresh)
         self.data_base_thread.buttons_enable.connect(self.switch_button_group)
         self.data_base_thread.calculate_step.connect(self.calculate_step)
-        self.data_base_thread.status.connect(self.statusbar.showMessage)
-        self.data_base_thread.progress_bar.connect(self.progressBar.setValue)
+        self.data_base_thread.status.connect(self.status_bar.showMessage)
+        self.data_base_thread.progress_bar.connect(self.progress_bar.setValue)
         self.data_base_thread.increase_step.connect(self.increase_step)
         self.data_base_thread.finished.connect(self.handle_data_base_results)
         self.data_base_thread.start()
@@ -765,7 +848,7 @@ class MyBrandThread(QThread):
             self.kill_thread.emit()
         self.cdw_to_pdf(self.files, single_draw_dir)
         pdf_file = self.merge_pdf_files(single_draw_dir, main_name)
-        if merger.checkBox_3.isChecked():
+        if merger.delete_single_draws_after_merge_checkbox.isChecked():
             shutil.rmtree(single_draw_dir)
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
@@ -798,7 +881,7 @@ class MyBrandThread(QThread):
 
     def make_paths(self, directory_to_save=None):
         today_date = time.strftime("%d.%m.%Y")
-        if merger.radio_button_2.isChecked():
+        if merger.search_by_spec_radio_button.isChecked():
             main_name = os.path.basename(merger.specification_path)[:-4]
         else:
             main_name = os.path.basename(self.search_path)
@@ -833,14 +916,15 @@ class MyBrandThread(QThread):
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
         self.appl = kompas_object
-        doc_app, iConverter, _ = kompas_api.get_kompas_settings(application, kompas_object)
+        doc_app, converter, _ = kompas_api.get_kompas_settings(application, kompas_object)
         number = 0
         for file in files:
             number += 1
             self.increase_step.emit(True)
             self.status.emit(f'Конвертация {file}')
-            iConverter.Convert(file, single_draw_dir + "\\" +
-                               f'{number} ' + os.path.basename(file) + ".pdf", 0, False)
+            converter.Convert(file, single_draw_dir + "\\" +
+                              f'{number} ' + os.path.basename(file) + ".pdf", 0, False
+                              )
 
     def merge_pdf_files(self, directory_with_draws, main_name):
         files = sorted(os.listdir(directory_with_draws), key=lambda fil: int(fil.split()[0]))
@@ -950,9 +1034,9 @@ class FilterThread(QThread):
             self.status.emit(f'Применение фильтров к {file}')
             self.increase_step.emit(True)
             doc, doc2d = kompas_api.get_right_api(file, docs, kompas_api7_module)
-            iStamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
+            draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
             if date_1:
-                date_in_stamp = iStamp.Text(130).Str
+                date_in_stamp = draw_stamp.Text(130).Str
                 if date_in_stamp:
                     try:
                         date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
@@ -961,12 +1045,12 @@ class FilterThread(QThread):
                     if not date_1_in_seconds <= date_in_stamp <= date_2_in_seconds:
                         continue
             if constructor_name:
-                constructor_in_Stamp = iStamp.Text(110).Str
-                if not constructor_name in constructor_in_Stamp:
+                constructor_in_stamp = draw_stamp.Text(110).Str
+                if constructor_name not in constructor_in_stamp:
                     continue
             if checker_name:
-                checker_in_Stamp = iStamp.Text(115).Str
-                if not checker_in_Stamp in checker_in_Stamp:
+                checker_in_stamp = draw_stamp.Text(115).Str
+                if checker_in_stamp not in checker_in_stamp:
                     continue
             draw_list.append(file)
             doc.Close(const.kdDoNotSaveChanges)
@@ -1017,8 +1101,8 @@ class DataBaseThread(QThread):
             self.increase_step.emit(True)
             dir_obj = shell.NameSpace(os.path.dirname(file))  # получаем объект папки виндовс шелл
             item = dir_obj.ParseName(os.path.basename(file))  # указатель на файл (делаем именно объект винд шелл)
-            doc_obozn = dir_obj.GetDetailsOf(item, meta_obozn).replace('$', '').replace('|', '').replace(' ',
-                                                                                                         '').strip().lower()
+            doc_obozn = dir_obj.GetDetailsOf(item, meta_obozn).replace('$', '').\
+                replace('|', '').replace(' ', '').strip().lower()
             # читаем обозначение мимо компаса, хз быстрее или нет
             # doc_name = dir_obj.GetDetailsOf(item, meta_name)  # читаем наименование мимо компаса, хз быстрее или нет
             if doc_obozn:
@@ -1066,8 +1150,8 @@ class DataBaseThread(QThread):
             self.status.emit(f'Сравнение даты для {path}')
             date_of_creation = os.stat(path).st_ctime
             doc, doc2d = kompas_api.get_right_api(path, docs, kompas_api7_module)
-            iStamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
-            date_in_stamp = iStamp.Text(130).Str
+            draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
+            date_in_stamp = draw_stamp.Text(130).Str
             try:
                 date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
             except:
@@ -1210,7 +1294,7 @@ class RecursionThread(QThread):
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     app.setStyle('Fusion')
-    merger = Ui_Merger()
+    merger = UiMerger()
     merger.show()
     sys.excepthook = except_hook
     sys.exit(app.exec_())

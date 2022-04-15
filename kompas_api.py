@@ -82,6 +82,7 @@ def get_draws_from_specification(spec_path: str, only_document_list=False):
     docs = app.Documents
     doc = docs.Open(spec_path, False, False)  # открываем документ, в невидимом режиме для записи
     errors: list[str] = []
+    file_name = os.path.basename(spec_path).split()[0]
 
     try:
         doc2d = kompas_api7_module.ISpecificationDocument(
@@ -122,12 +123,12 @@ def get_draws_from_specification(spec_path: str, only_document_list=False):
 
                 elif i.Section == 20 and size != 'б/ч' and size != 'бч':
                     detail_draws.append((obozn, name))
-    if documentation_draws:
-        files["Сборочные чертежи"] = documentation_draws
-    if detail_draws:
-        files['Детали'] = detail_draws
-    if assembly_draws:
-        files["Сборочные единицы"] = assembly_draws
+        if documentation_draws:
+            files["Сборочные чертежи"] = documentation_draws
+        if detail_draws:
+            files['Детали'] = detail_draws
+        if assembly_draws:
+            files["Сборочные единицы"] = assembly_draws
     app.HideMessage = const.ksHideMessageNo
     return files, application, errors
 
