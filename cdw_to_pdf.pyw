@@ -101,7 +101,8 @@ class UiMerger(MakeWidgets):
         self.gridLayout.addWidget(self.add_file_to_list_button, 10, 2, 1, 1)
 
         self.add_folder_to_list_button = self.make_button(
-            text="Добавить папку в список", font=font,
+            text="Добавить папку в список",
+            font=font,
             command=self.add_folder_to_list
         )
         self.gridLayout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
@@ -508,13 +509,20 @@ class UiMerger(MakeWidgets):
             self.send_error('Нету файлов с обозначением в штампе')
 
     def save_data_base(self):
-        choice = QtWidgets.QMessageBox.question(self, 'База данных',
-                                                "Сохранить полученные данные?",
-                                                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+        choice = QtWidgets.QMessageBox.question(
+            self,
+            'База данных',
+            "Сохранить полученные данные?",
+             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
         if choice == QtWidgets.QMessageBox.Yes:
             self.apply_data_base_save()
         else:
-            QtWidgets.QMessageBox.information(self, 'Отмена записи', 'Данные о связях хранятся в памяти')
+            QtWidgets.QMessageBox.information(
+                self,
+                'Отмена записи',
+                'Данные о связях хранятся в памяти'
+            )
             self.save_data_base_file_button.setEnabled(True)
 
     def apply_data_base_save(self):
@@ -529,7 +537,11 @@ class UiMerger(MakeWidgets):
             self.source_of_draws_field.setText(filename)
             self.search_path = filename
         if self.save_data_base_file_button.isEnabled():
-            QtWidgets.QMessageBox.information(self, 'Запись данных', 'Запись данных успешно произведена')
+            QtWidgets.QMessageBox.information(
+                self,
+                'Запись данных',
+                'Запись данных успешно произведена'
+            )
             self.save_data_base_file_button.setEnabled(False)
 
     def get_data_base_path(self):
@@ -575,7 +587,8 @@ class UiMerger(MakeWidgets):
         self.listWidget.clear()
         self.bypassing_folders_inside_checkbox_status = 'Yes' \
             if self.bypassing_folders_inside_checkbox.isChecked() else 'No'
-        if self.bypassing_folders_inside_checkbox.isChecked() or self.search_by_spec_radio_button.isChecked():
+        if self.bypassing_folders_inside_checkbox.isChecked() \
+                or self.search_by_spec_radio_button.isChecked():
             for this_dir, dirs, files_here in os.walk(search_path, topdown=True):
                 dirs[:] = [d for d in dirs if d not in except_folders_list]
                 if os.path.basename(this_dir) in except_folders_list:
@@ -1194,30 +1207,39 @@ class RecursionThread(QThread):
 
     def process_specification(self):
         self.draw_list.append(self.specification_path)
-        self.recursive_traversal(self.draws_in_specification)
+        self.recursive_draws_traversal(self.draws_in_specification)
 
-    def recursive_traversal(self, draw_list, drawisimo=None):
-        # drawisimo берется не None если идет рекурсия
-        drawisimo = drawisimo or self.specification_path
-        self.status.emit(f'Обработка {os.path.basename(drawisimo)}')
+    def recursive_draws_traversal(self, draw_list, spec_path: Optional[str] = None):
+        # spec_path берется не None если идет рекурсия
+        spec_path = spec_path or self.specification_path
+        self.status.emit(f'Обработка {os.path.basename(spec_path)}')
 
         for group_name, draws_description in draw_list.items():
             if group_name in ["Сборочные чертежи", "Детали"]:
-                for item in draws_description:
-                    cdw_file_path = self.fetch_draw_path(item, file_extension='.cdw', file_path=drawisimo)
+                for draw_full_name in draws_description:
+                    cdw_file_path = self.fetch_draw_path(
+                        draw_full_name,
+                        file_extension='.cdw',
+                        file_path=spec_path
+                    )
                     if cdw_file_path:
                         self.draw_list.append(cdw_file_path)
             else:  # сборочные единицы
-                for item in draws_description:
-                    spw_file_path = self.fetch_draw_path(item, file_extension='.spw', file_path=drawisimo)
+                for draw_full_name in draws_description:
+                    spw_file_path = self.fetch_draw_path(
+                        draw_full_name,
+                        file_extension='.spw',
+                        file_path=spec_path
+                    )
                     if not spw_file_path:
                         continue
-
                     self.draw_list.append(spw_file_path)
+
                     if self.only_one_specification:
                         response = kompas_api.get_draws_from_specification(
                             spw_file_path,
-                            only_document_list=True
+                            only_document_list=True,
+                            draw_obozn=draw_full_name[0]
                         )
                         if type(response) == str:  # ошибка при открытии спецификации
                             self.missing_list.append(response)
@@ -1227,7 +1249,10 @@ class RecursionThread(QThread):
                         if errors:
                             self.missing_list.extend(errors)
                     else:
-                        response = kompas_api.get_draws_from_specification(spw_file_path)
+                        response = kompas_api.get_draws_from_specification(
+                            spw_file_path,
+                            draw_obozn=draw_full_name[0]
+                        )
                         if type(response) == str:  # ошибка при открытии спецификации
                             self.missing_list.append(response)
                             continue
@@ -1235,7 +1260,7 @@ class RecursionThread(QThread):
                         draws_in_specification, self.appl, errors = response
                         if errors:
                             self.missing_list.extend(errors)
-                        self.recursive_traversal(draws_in_specification, spw_file_path)
+                        self.recursive_draws_traversal(draws_in_specification, spw_file_path)
 
     def fetch_draw_path(self, item: tuple[str, str], file_extension: str, file_path: str) -> Optional[str]:
         draw_obozn, draw_name = item
@@ -1271,10 +1296,11 @@ class RecursionThread(QThread):
         if spec_path:
             return spec_path
 
-        draw_info = re.search(r"(.+)(?:-)(0[13579][а-яёa]?$)", spec_obozn, re.I)
+        draw_info = kompas_api.fetch_obozn_execution_and_name(spec_obozn)
         if not draw_info:
             return
-        obozn, execution = draw_info.groups()
+        obozn, execution = draw_info
+
         last_symbol = ""
         if not execution[:-1].isdigit():  # если есть буква в конце
             last_symbol = execution[-1]
@@ -1289,6 +1315,7 @@ class RecursionThread(QThread):
         obozn += execution
         spec_path = self.data_base_files.get(obozn.strip())
         return spec_path
+
 
 
 if __name__ == '__main__':
