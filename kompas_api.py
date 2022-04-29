@@ -10,6 +10,9 @@ from typing import Optional, Any, Union
 import pythoncom
 from win32com.client import Dispatch, gencache
 
+OBOZN_COLUMN = (4, 1, 0)
+NAME_COLUMN = (5, 1, 0)
+
 
 class ObjectType(enum.IntEnum):
     OBOZN_ISP = 4
@@ -82,26 +85,16 @@ def get_draws_from_specification(spec_path: str, only_document_list=False, draw_
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     app.HideMessage = const.ksHideMessageYes
-    docs = app.Documents
-    doc = docs.Open(spec_path, False, False)  # открываем документ, в невидимом режиме для записи
     file_name = os.path.basename(spec_path).split()[0]
 
-    try:
-        doc2d = kompas_api7_module.ISpecificationDocument(
-            doc._oleobj_.QueryInterface
-            (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch)
-        )
-    except Exception:
-        return f"Ошибка при открытии спецификации {spec_path} \n"
-
-    i_layout_sheet = doc2d.LayoutSheets.Item(0)
-    oformlenie = i_layout_sheet.LayoutStyleNumber  # считываем номер оформления документа
-    spc_descriptions = doc.SpecificationDescriptions
+    response = create_spc_object(spec_path, app, kompas_api7_module, const)
+    if type(response) == str:
+        return response
+    oformlenie, spc_description, doc = response
 
     if oformlenie not in [17, 51]:  # 17, 51 - работаем только в простой и групповой
         return f"Указан не поддерживаемый тип спецификации {spec_path} \n"
 
-    spc_description = spc_descriptions.Item(0)
     if oformlenie == 17:
         response = get_paths_from_simple_specification(
             spc_description,
@@ -130,6 +123,7 @@ def get_draws_from_specification(spec_path: str, only_document_list=False, draw_
     if assembly_draws:
         files["Сборочные единицы"] = assembly_draws
     app.HideMessage = const.ksHideMessageNo
+    doc.Close(const.kdDoNotSaveChanges)
     return files, application, errors
 
 
@@ -146,8 +140,8 @@ def get_paths_from_simple_specification(
     for i in spc_description.Objects:
         if (i.ObjectType == ObjectType.REGULAR_LINE or i.ObjectType == 2) \
                 and i.Columns.Column(4, 1, 0):
-            obozn = i.Columns.Column(4, 1, 0).Text.Str.strip().lower().replace(' ', '')
-            name = i.Columns.Column(5, 1, 0).Text.Str.strip().lower()
+            obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+            name = i.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
             if not obozn:
                 continue
             try:
@@ -169,6 +163,10 @@ def get_paths_from_simple_specification(
                 assembly_draws.append((obozn, name))
 
             elif i.Section == 20 and size != 'б/ч' and size != 'бч':
+                if obozn == "различияисполненийпосборочномучертежу":
+                    continue
+                if "гост" in name:
+                    continue
                 detail_draws.append((obozn, name))
     return documentation_draws, detail_draws, assembly_draws, errors
 
@@ -194,14 +192,13 @@ def get_paths_from_group_spec(
     response = get_column_number(spc_description, execution)
     if type(response) == str:
         return response
-
-    column_numer = response
+    column_number = response
 
     for i in spc_description.Objects:
-        if i.ObjectType in [1, 2] and i.Columns.Column(4, 1, 0) \
-                and i.Columns.Column(6, column_numer, 0).Text.Str:
-            obozn = i.Columns.Column(4, 1, 0).Text.Str.strip().lower().replace(' ', '')
-            name = i.Columns.Column(5, 1, 0).Text.Str.strip().lower()
+        if i.ObjectType in [1, 2] and i.Columns.Column(*OBOZN_COLUMN) \
+                and i.Columns.Column(6, column_number, 0).Text.Str:
+            obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+            name = i.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
             if not obozn:
                 continue
             try:
@@ -246,16 +243,66 @@ def fetch_obozn_execution_and_name(draw_obozn: str) -> Optional[tuple[str | Any]
 
 
 def get_column_number(spc_description, execution: str) -> Union[str, int]:
-    for i in spc_description.Objects:
-        if i.ObjectType == ObjectType.OBOZN_ISP:
+    for spc_line in spc_description.Objects:
+        if spc_line.ObjectType == ObjectType.OBOZN_ISP:
             try:
                 for column_number in range(1, 10):
-                    execution_in_draw = i.Columns.Column(6, column_number, 0).Text.Str.strip()
+                    execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
                     execution_in_draw = execution_in_draw[1:] if len(execution_in_draw) > 1 \
                         else execution_in_draw  # исполнение м.б - или -01
                     if execution_in_draw == execution:
-                        return column_number
+                        break
             except AttributeError:
                 return "Совпадение не найдено"
+
+        if spc_line.ObjectType in [1, 2] and spc_line.Columns.Column(*OBOZN_COLUMN):
+
+            if spc_line.Columns.Column(6, column_number, 0).Text.Str.strip():
+                return column_number
+    return "Совпадение не найдено"
+
+
+def create_spc_object(spec_path: str, app, kompas_api7_module, const):
+    docs = app.Documents
+    doc = docs.Open(spec_path, False, False)  # открываем документ, в невидимом режиме для записи
+
+    try:
+        doc2d = kompas_api7_module.ISpecificationDocument(
+            doc._oleobj_.QueryInterface
+            (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch)
+        )
+    except Exception:
+        try:
+            doc.Close(const.kdDoNotSaveChanges)
+        except AttributeError:
+            pass
+        return f"Ошибка при открытии спецификации {spec_path} \n"
+
+    i_layout_sheet = doc2d.LayoutSheets.Item(0)
+    oformlenie = i_layout_sheet.LayoutStyleNumber  # считываем номер оформления документа
+    spc_descriptions = doc.SpecificationDescriptions
+    spc_description = spc_descriptions.Item(0)
+    return oformlenie, spc_description, doc
+
+
+def verify_its_group_spec_path(spec_path: str, execution: str):
+    kompas_api7_module, application, const = get_kompas_api7()
+    app = application.Application
+    app.HideMessage = const.ksHideMessageYes
+    response = create_spc_object(spec_path, app, kompas_api7_module, const)
+    if type(response) == str:
+        return
+
+    oformlenie, spc_description, doc = response
+    if oformlenie != 51:
+        doc.Close(const.kdDoNotSaveChanges)
+        return
+    response = get_column_number(spc_description, execution)
+    if type(response) == str:
+        doc.Close(const.kdDoNotSaveChanges)
+        return
+
+    doc.Close(const.kdDoNotSaveChanges)
+    return True
 
 

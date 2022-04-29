@@ -395,13 +395,14 @@ class UiMerger(MakeWidgets):
 
     def print_out_missing_files(self):
         one_line_messages = []
-        for index, error in enumerate(self.missing_list):
-            if type(error) != str:
-                continue
-            del self.missing_list[index]
-            one_line_messages.append(error)
+        grouped_messages = []
+        for error in self.missing_list:
+            if type(error) == str:
+                one_line_messages.append(error)
+            else:
+                grouped_messages.append(error)
 
-        grouped_list = itertools.groupby(self.missing_list, itemgetter(0))
+        grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
         grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
         missing_message = '\n'.join(grouped_list)
         choice = QtWidgets.QMessageBox.question(
@@ -1289,33 +1290,42 @@ class RecursionThread(QThread):
             return
 
     def fetch_spec_group_path(self, spec_obozn: str) -> Optional[str]:
-
-        mirror_obozn = spec_obozn + "-01"
-        db_other = spec_obozn + mirror_obozn
-        spec_path = self.data_base_files.get(db_other)
-        if spec_path:
-            return spec_path
-
         draw_info = kompas_api.fetch_obozn_execution_and_name(spec_obozn)
         if not draw_info:
-            return
-        obozn, execution = draw_info
+            last_symbol = ""
+            if not spec_obozn[-1].isdigit():
+                last_symbol = spec_obozn[-1]
 
+            db_obozn = spec_obozn
+            spec_path = ""
+            for num in range(1, 4): #  обычно максимальное количество исполнений до -03
+                db_obozn += spec_obozn + f"-0{num}{last_symbol}"
+                spec_path = self.data_base_files.get(db_obozn)
+                if spec_path:
+                    break
+            if spec_path:
+                return spec_path
+            return
+
+        obozn, execution = draw_info
         last_symbol = ""
-        if not execution[:-1].isdigit():  # если есть буква в конце
+        if not execution[-1].isdigit():  # если есть буква в конце
             last_symbol = execution[-1]
             execution = execution[:-1]
 
-        # чертежи идут только с четными номерами, парсим нечетные
+        # чертежи идут с четными номерами, парсим нечетные
         number_of_execution = int(execution) - 1
-        execution = ""
+        spc_execution = ""  # исполнеение для поиска по бд
         if number_of_execution:
-            execution = f"-0{number_of_execution}" + last_symbol
+            spc_execution = f"-0{number_of_execution}" + last_symbol
 
-        obozn += execution
+        obozn += spc_execution
         spec_path = self.data_base_files.get(obozn.strip())
-        return spec_path
+        is_that_correct_path = kompas_api.verify_its_group_spec_path(spec_path[0], execution)
+        if not is_that_correct_path:
+            return
 
+        return spec_path
 
 
 if __name__ == '__main__':
