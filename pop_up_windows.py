@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from _datetime import datetime
 from PyQt5 import QtCore, QtGui, QtWidgets
 from Widgets_class import MakeWidgets
@@ -98,7 +100,6 @@ class SettingsWindow(QtWidgets.QDialog):
         self.lineEdit.setSizePolicy(sizePolicy)
         self.lineEdit.setEnabled(False)
         self.gridLayout.addWidget(self.lineEdit, 3, 2, 1, 1)
-
 
         self.checkBox_3 = self.construct_class.make_checkbox(
             font=font, text='С указанной фамилией проверяющего', command=self.select_checker,
@@ -204,8 +205,6 @@ class SettingsWindow(QtWidgets.QDialog):
         self.pushButton_4 = self.construct_class.make_button(text='Ок', parent=self.gridLayoutWidget,
                                                              font=font, command=self.close)
         self.gridLayout.addWidget(self.pushButton_4, 14, 0, 1, 1)
-
-
         QtCore.QMetaObject.connectSlotsByName(Form)
 
     def get_settings(self):
@@ -220,6 +219,7 @@ class SettingsWindow(QtWidgets.QDialog):
             obj = json.load(data)
         except json.decoder.JSONDecodeError as e:
             self.construct_class.error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
+            data.close()
             return
         data.close()
         return obj
@@ -335,7 +335,6 @@ class SettingsWindow(QtWidgets.QDialog):
             if filename:
                 self.lineEdit_3.setText(filename)
 
-
     def add_folder(self):
         folder_name, ok = QtWidgets.QInputDialog.getText(self, "Дилог ввода текста", "Введите название папки")
         if ok:
@@ -367,3 +366,66 @@ class SettingsWindow(QtWidgets.QDialog):
         self.load_settings = self.get_settings()
         if self.load_settings:
             self.apply_settings()
+
+
+class RadioButtonsWindow(QtWidgets.QDialog):
+
+    def __init__(self, executions: list[str]):
+        QtWidgets.QDialog.__init__(self)
+        self.construct_class = MakeWidgets()
+        self.executions = executions
+        self.layout = QtWidgets.QGridLayout()
+        self.setLayout(self.layout)
+        self.setWindowTitle("Вы указали групповую спецификацию")
+
+        self.font = QtGui.QFont()
+        self.font.setFamily("Arial")
+        self.font.setPointSize(12)
+        self.set_label()
+        self.set_options()
+        self.add_buttons()
+
+        self.radio_state = None
+
+    def on_radio_clicked(self):
+        radio_button = self.sender()
+        if radio_button.isChecked():
+            self.radio_state = radio_button.option
+
+    def on_button_clicked(self):
+        source = self.sender()
+
+        if source.text() == 'Отмена':
+            self.radio_state = None
+        self.close()
+
+    def set_label(self):
+        plain_text = QtWidgets.QLabel('Выберите исполнение для слияния:')
+        plain_text.setFont(self.font)
+        self.layout.addWidget(plain_text, 0, 0, 1, 3)
+
+    def set_options(self):
+        for index, option in enumerate(self.executions):
+            if type(option) != str:
+                continue
+            radiobutton = QtWidgets.QRadioButton(option)
+            radiobutton.option = option
+            radiobutton.toggled.connect(self.on_radio_clicked)
+            radiobutton.setFont(self.font)
+            self.layout.addWidget(radiobutton, 2, index)
+
+    def add_buttons(self):
+        button_layout = QtWidgets.QHBoxLayout()
+
+        ok_button = QtWidgets.QPushButton('OК')
+        ok_button.setFont(self.font)
+        ok_button.clicked.connect(self.on_button_clicked)
+        button_layout.addWidget(ok_button)
+
+        cancel_button = QtWidgets.QPushButton('Отмена')
+        cancel_button.setFont(self.font)
+        cancel_button.clicked.connect(self.on_button_clicked)
+        button_layout.addWidget(cancel_button)
+
+        self.layout.addLayout(button_layout, 3, 0, 1, 4)
+

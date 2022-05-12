@@ -12,6 +12,7 @@ from win32com.client import Dispatch, gencache
 
 OBOZN_COLUMN = (4, 1, 0)
 NAME_COLUMN = (5, 1, 0)
+WITHOUT_EXECUTION = 1000
 
 
 class ObjectType(enum.IntEnum):
@@ -81,7 +82,11 @@ def date_to_seconds(date_string):
     return time.mktime(struct_date)
 
 
-def get_draws_from_specification(spec_path: str, only_document_list=False, draw_obozn: str = None):
+def get_draws_from_specification(spec_path: str, *,
+                                 only_document_list=False,
+                                 draw_obozn: str = None,
+                                 by_button_click=False,
+                                 column_number: list[int] = None):
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     app.HideMessage = const.ksHideMessageYes
@@ -102,14 +107,20 @@ def get_draws_from_specification(spec_path: str, only_document_list=False, draw_
             only_document_list
         )
     else:
+        if by_button_click:  # выбрать пользователю какое исполнение он хочет слить
+            executions = get_all_spec_executions(spc_description)
+            return executions
         response = get_paths_from_group_spec(
             spc_description,
             spec_path,
             only_document_list,
-            draw_obozn
+            draw_obozn,
+            column_number
         )
         if type(response) == str:  # совпадение не найден
+            doc.close()
             return f"\nИсполнение {draw_obozn} для групповой спецификации не найдено\n"
+
     if only_document_list:
         documentation_draws, errors = response
         return documentation_draws, application, errors
@@ -165,7 +176,7 @@ def get_paths_from_simple_specification(
             elif i.Section == 20 and size != 'б/ч' and size != 'бч':
                 if obozn == "различияисполненийпосборочномучертежу":
                     continue
-                if "гост" in name:
+                if "гост" in name or 'гост' in obozn:
                     continue
                 detail_draws.append((obozn, name))
     return documentation_draws, detail_draws, assembly_draws, errors
@@ -175,52 +186,65 @@ def get_paths_from_group_spec(
         spc_description,
         spec_path: str,
         only_document_list: bool,
-        draw_obozn: str
+        draw_obozn: str,
+        column_numbers: list[int] = None
 ):
     documentation_draws: list[tuple[str, str]] = []
     assembly_draws: list[tuple[str, str]] = []
     detail_draws: list[tuple[str, str]] = []
     errors: list[str] = []
-    draw_info = fetch_obozn_execution_and_name(draw_obozn)
+    registered_obozn: list[str] = []
 
-    if draw_info is None:
-        execution = "-"
-    else:
-        _, execution = draw_info
-        if not execution[:-1].isdigit():  # если есть буква в конце
-            execution = execution[:-1]
-    response = get_column_number(spc_description, execution)
-    if type(response) == str:
-        return response
-    column_number = response
+    if not column_numbers:
+        draw_info = fetch_obozn_execution_and_name(draw_obozn)
+
+        if draw_info is None:
+            execution = "-"
+        else:
+            _, execution = draw_info
+            if not execution[:-1].isdigit():  # если есть буква в конце
+                execution = execution[:-1]
+        response = get_column_number(spc_description, execution)
+        if type(response) == str:
+            return response
+        column_numbers = [response]
 
     for i in spc_description.Objects:
-        if i.ObjectType in [1, 2] and i.Columns.Column(*OBOZN_COLUMN) \
-                and i.Columns.Column(6, column_number, 0).Text.Str:
-            obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
-            name = i.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
-            if not obozn:
-                continue
+        for column_number in column_numbers:
             try:
-                size = i.Columns.Column(1, 1, 0).Text.Str.strip().lower()
+                obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+                name = i.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
             except AttributeError:
-                size = None
+                continue
 
             if i.Section == 5:
+                if obozn in registered_obozn:
+                    continue
                 documentation_draws.append((obozn, name))
+                registered_obozn.append(obozn)
                 if only_document_list:
                     return documentation_draws, errors
 
-            elif i.Section == 15:
-                if is_detail(obozn):
-                    message = f"\nВозможно указана деталь в качестве спецификации " \
-                              f"-> {spec_path} ||| {obozn} \n"
-                    errors.append(message)
+            elif i.ObjectType in [1, 2] and obozn and i.Columns.Column(6, column_number, 0).Text.Str:
+                if obozn in registered_obozn:
                     continue
-                assembly_draws.append((obozn, name))
+                registered_obozn.append(obozn)
+                try:
+                    size = i.Columns.Column(1, 1, 0).Text.Str.strip().lower()
+                except AttributeError:
+                    size = None
 
-            elif i.Section == 20 and size != 'б/ч' and size != 'бч':
-                detail_draws.append((obozn, name))
+                if i.Section == 15:
+                    if is_detail(obozn):
+                        message = f"\nВозможно указана деталь в качестве спецификации " \
+                                  f"-> {spec_path} ||| {obozn} \n"
+                        errors.append(message)
+                        continue
+                    assembly_draws.append((obozn, name))
+
+                elif i.Section == 20 and size != 'б/ч' and size != 'бч':
+                    detail_draws.append((obozn, name))
+
     return documentation_draws, detail_draws, assembly_draws, errors
 
 
@@ -242,6 +266,31 @@ def fetch_obozn_execution_and_name(draw_obozn: str) -> Optional[tuple[str | Any]
     return draw_info.groups()
 
 
+def get_all_spec_executions(spc_description) -> Union[str, dict[str, int]]:
+    executions: dict[str, int] = {}
+    return_executions: dict[str, int] = {}
+
+    for spc_line in spc_description.Objects:
+        if spc_line.ObjectType == ObjectType.OBOZN_ISP:
+            try:
+                for column_number in range(1, 10):
+                    execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
+                    if execution_in_draw == '-':
+                        execution_in_draw = 'Базовое исполнение'
+                    executions[execution_in_draw] = column_number
+            except AttributeError:
+                break
+    if not executions:
+        return 'Ошибка открытия спецификации'
+
+    for column_text, column_number in executions.items():
+        is_this_column_not_emty = verify_column_not_empty(spc_description, column_number)
+        if is_this_column_not_emty:
+            return_executions[column_text] = column_number
+    return_executions['Все исполнения'] = WITHOUT_EXECUTION
+    return return_executions
+
+
 def get_column_number(spc_description, execution: str) -> Union[str, int]:
     for spc_line in spc_description.Objects:
         if spc_line.ObjectType == ObjectType.OBOZN_ISP:
@@ -254,12 +303,20 @@ def get_column_number(spc_description, execution: str) -> Union[str, int]:
                         break
             except AttributeError:
                 return "Совпадение не найдено"
+            break
 
+    is_this_column_not_emty = verify_column_not_empty(spc_description, column_number)
+    if is_this_column_not_emty:
+        return column_number
+    return "Совпадение не найдено"
+
+
+def verify_column_not_empty(spc_description, column_number):
+    for spc_line in spc_description.Objects:
         if spc_line.ObjectType in [1, 2] and spc_line.Columns.Column(*OBOZN_COLUMN):
 
             if spc_line.Columns.Column(6, column_number, 0).Text.Str.strip():
-                return column_number
-    return "Совпадение не найдено"
+                return True
 
 
 def create_spc_object(spec_path: str, app, kompas_api7_module, const):
@@ -285,7 +342,14 @@ def create_spc_object(spec_path: str, app, kompas_api7_module, const):
     return oformlenie, spc_description, doc
 
 
-def verify_its_group_spec_path(spec_path: str, execution: str):
+def verify_its_correct_spec_path(spec_path: str, execution: str):
+    def look_for_line(line: str) -> bool:
+        for i in spc_description.Objects:
+            if i.ObjectType in [1, 2] and i.Columns.Column(*OBOZN_COLUMN):
+                obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+                if line == obozn:
+                    return True
+
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     app.HideMessage = const.ksHideMessageYes
@@ -295,8 +359,9 @@ def verify_its_group_spec_path(spec_path: str, execution: str):
 
     oformlenie, spc_description, doc = response
     if oformlenie != 51:
+        response = look_for_line('различияисполненийпосборочномучертежу')
         doc.Close(const.kdDoNotSaveChanges)
-        return
+        return response
     response = get_column_number(spc_description, execution)
     if type(response) == str:
         doc.Close(const.kdDoNotSaveChanges)
@@ -304,5 +369,3 @@ def verify_its_group_spec_path(spec_path: str, execution: str):
 
     doc.Close(const.kdDoNotSaveChanges)
     return True
-
-

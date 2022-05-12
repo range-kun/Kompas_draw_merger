@@ -23,7 +23,7 @@ from win32com.client import Dispatch
 
 import kompas_api
 from Widgets_class import MakeWidgets
-from settings_window import SettingsWindow
+from pop_up_windows import SettingsWindow, RadioButtonsWindow
 
 
 def except_hook(cls, exception, traceback):
@@ -256,9 +256,9 @@ class UiMerger(MakeWidgets):
         QtCore.QMetaObject.connectSlotsByName(self)
 
     def choose_initial_folder(self):
-        directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
-        if directory:
-            draw_list = self.check_search_path(directory)
+        directory_path = filedialog.askdirectory(title="Укажите папку для поиска")
+        if directory_path:
+            draw_list = self.check_search_path(directory_path)
             if not draw_list:
                 return
             self.source_of_draws_field.setText(self.search_path)
@@ -304,7 +304,7 @@ class UiMerger(MakeWidgets):
             filetypes=(("spec", "*.spw"),)
         )
         if file_path:
-            response = self.check_specification(file_path)
+            response = self.check_specification(file_path, True)
             if not response:
                 return
             elif type(response) == str:
@@ -318,13 +318,31 @@ class UiMerger(MakeWidgets):
                 else:
                     self.get_data_base()
 
-    def check_specification(self, file_path: str):
+    def check_specification(self, file_path: str, by_button_click: bool = False):
         if file_path.endswith('.spw') and os.path.isfile(file_path):
-            response = kompas_api.get_draws_from_specification(file_path)
+            response = kompas_api.get_draws_from_specification(
+                file_path,
+                by_button_click=by_button_click
+            )
             if type(response) == str:  # ошибка при открытии спецификации
                 return response
+            if type(response) == dict:  # открыли групповую спеку при проверки получили исполнения
+                radio_window = RadioButtonsWindow(response.keys())
+                radio_window.exec_()
+                if not radio_window.radio_state:
+                    self.send_error('Исполнение не выбрано')
+                    return
+                column_numbers = response[radio_window.radio_state]
+                if column_numbers == kompas_api.WITHOUT_EXECUTION:
+                    column_numbers = list(response.values())[:-1]
+                else:
+                    column_numbers = [column_numbers]
+                response = kompas_api.get_draws_from_specification(
+                    file_path, column_number=column_numbers
+                )
 
             draws_in_specification, self.appl, errors = response
+
             self.missing_list.extend(errors)
             if draws_in_specification:
                 self.draws_in_specification = draws_in_specification
@@ -546,12 +564,15 @@ class UiMerger(MakeWidgets):
             self.save_data_base_file_button.setEnabled(False)
 
     def get_data_base_path(self):
-        filename = QtWidgets.QFileDialog.getOpenFileName(self, "Загрузить файл", ".", "Json file(*.json)")[0]
-        if filename:
-            if filename:
-                self.load_data_base(filename)
-            else:
-                self.send_error('Указанный файл не является файлом .json')
+        file_path = filedialog.askopenfilename(
+            initialdir="",
+            title="Загрузить файл",
+            filetypes=(("Json file", "*.json"),)
+        )
+        if file_path:
+            self.load_data_base(file_path)
+        else:
+            self.send_error('Файл с базой не выбран .json')
 
     def load_data_base(self, filename, refresh=False):
         filename = filename or self.search_path
@@ -688,7 +709,7 @@ class UiMerger(MakeWidgets):
         if self.serch_in_folder_radio_button.isChecked():
             self.source_of_draws_field.setPlaceholderText("Выберите папку с файлами в формате .cdw или .spw")
         else:
-            self.line_edit.setPlaceholderText("Выберите папку с файлами в формате "
+            self.source_of_draws_field.setPlaceholderText("Выберите папку с файлами в формате "
                                               ".cdw или .spw \n или файл с базой данных в формате .json")
         self.path_to_spec_field.clear()
         self.path_to_spec_field.setPlaceholderText('Укажите путь до файла со спецификацией')
@@ -931,7 +952,11 @@ class MyBrandThread(QThread):
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
         self.appl = kompas_object
         doc_app, converter, _ = kompas_api.get_kompas_settings(application, kompas_object)
+        app = application.Application
+        app.HideMessage = const.ksHideMessageYes
+
         number = 0
+
         for file in files:
             number += 1
             self.increase_step.emit(True)
@@ -939,6 +964,7 @@ class MyBrandThread(QThread):
             converter.Convert(file, single_draw_dir + "\\" +
                               f'{number} ' + os.path.basename(file) + ".pdf", 0, False
                               )
+        app.HideMessage = const.ksHideMessageNo
 
     def merge_pdf_files(self, directory_with_draws, main_name):
         files = sorted(os.listdir(directory_with_draws), key=lambda fil: int(fil.split()[0]))
@@ -1270,7 +1296,7 @@ class RecursionThread(QThread):
         except KeyError:
             draw_path = []
             if file_extension == ".spw":
-                draw_path = self.fetch_spec_group_path(draw_obozn)
+                draw_path = self.try_fetch_spec_path(draw_obozn)
             if file_extension == ".cdw" or not draw_path:
                 spec_path = os.path.basename(file_path)
                 missing_draw = [draw_obozn.upper(), draw_name.capitalize().replace('\n', ' ')]
@@ -1289,7 +1315,7 @@ class RecursionThread(QThread):
                 self.error += 1
             return
 
-    def fetch_spec_group_path(self, spec_obozn: str) -> Optional[str]:
+    def try_fetch_spec_path(self, spec_obozn: str) -> Optional[str]:
         draw_info = kompas_api.fetch_obozn_execution_and_name(spec_obozn)
         if not draw_info:
             last_symbol = ""
@@ -1298,7 +1324,7 @@ class RecursionThread(QThread):
 
             db_obozn = spec_obozn
             spec_path = ""
-            for num in range(1, 4): #  обычно максимальное количество исполнений до -03
+            for num in range(1, 4):  # обычно максимальное количество исполнений до -03
                 db_obozn += spec_obozn + f"-0{num}{last_symbol}"
                 spec_path = self.data_base_files.get(db_obozn)
                 if spec_path:
@@ -1321,7 +1347,7 @@ class RecursionThread(QThread):
 
         obozn += spc_execution
         spec_path = self.data_base_files.get(obozn.strip())
-        is_that_correct_path = kompas_api.verify_its_group_spec_path(spec_path[0], execution)
+        is_that_correct_path = kompas_api.verify_its_correct_spec_path(spec_path[0], execution)
         if not is_that_correct_path:
             return
 
