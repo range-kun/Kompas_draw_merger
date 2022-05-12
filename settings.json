@@ -10,7 +10,8 @@
             "Дугин",
             "Мишнева",
             "Педан",
-            "Рыженков"
+            "Рыженков",
+            "Липодат"
           ],
   "checker_list":
           [
@@ -18,7 +19,7 @@
             "Педан"
           ],
   "add_default_watermark": true,
-  "watermark_path": "12.png",
+  "watermark_path": "watermark.png",
   "watermark_position":
           [
             0,

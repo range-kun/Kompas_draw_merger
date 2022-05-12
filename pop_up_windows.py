@@ -301,8 +301,13 @@ class SettingsWindow(QtWidgets.QDialog):
         if self.checkBox_4.isChecked():
             self.btngroup_3.setExclusive(True)
             self.radio_button_5.setChecked(self.checkBox_4.isChecked())
+
             if self.watermark_path:
-                path = os.path.abspath(self.watermark_path)
+                current_dir_path = os.path.dirname(os.path.abspath(__file__))
+                path = os.path.abspath('bdt_stamp.png')
+                if not os.path.exists(path):
+                    path = os.path.abspath(self.watermark_path)
+
                 if os.path.exists(path):
                     self.watermark_path = path
                     self.lineEdit_3.setText(self.watermark_path)
