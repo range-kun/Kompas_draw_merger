@@ -70,6 +70,10 @@ class UiMerger(MakeWidgets):
         font.setPointSize(12)
         self.setFont(font)
 
+        self.small_font = QtGui.QFont()
+        self.small_font.setPointSize(11)
+        self.small_font.setFamily("Arial")
+
         self.centralwidget = QtWidgets.QWidget(self)
         self.centralwidget.setObjectName("centralwidget")
         self.gridLayoutWidget = QtWidgets.QWidget(self.centralwidget)
@@ -188,14 +192,14 @@ class UiMerger(MakeWidgets):
         self.gridLayout.addWidget(self.bypassing_sub_assemblies_chekbox, 3, 1, 1, 1)
 
         self.source_of_draws_field = self.make_text_edit(
-            font=font,
+            font=self.small_font,
             placeholder="Выберите папку с файлами в формате .spw или .cdw",
             size_policy=sizepolicy
         )
         self.gridLayout.addWidget(self.source_of_draws_field, 1, 0, 1, 2)
 
         self.path_to_spec_field = self.make_text_edit(
-            font=font,
+            font=self.small_font,
             placeholder="Укажите путь до файла со спецификацией .sdw",
             size_policy=sizepolicy
         )
@@ -497,13 +501,13 @@ class UiMerger(MakeWidgets):
         if not draw_list:
             self.send_error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
             self.current_progress = 0
-            self.progress_bar.setValue(self.current_progress)
+            self.progress_bar.setValue(int(self.current_progress))
             self.listWidget.clear()
             self.switch_button_group(True)
             return
         if filter_only:
             self.current_progress = 0
-            self.progress_bar.setValue(self.current_progress)
+            self.progress_bar.setValue(int(self.current_progress))
             self.fill_list(draw_list=draw_list)
             self.switch_button_group(True)
             return
@@ -517,6 +521,7 @@ class UiMerger(MakeWidgets):
         event.accept()
 
     def handle_data_base_results(self, data_base, appl, refresh=False):
+        self.progress_bar.setValue(0)
         self.status_bar.showMessage('Завершено получение Базы Данных')
         if appl:
             self.appl = None
@@ -730,17 +735,20 @@ class UiMerger(MakeWidgets):
                 file.setCheckState(QtCore.Qt.Unchecked)
 
     def add_file_to_list(self):
-        filename = [QtWidgets.QFileDialog.getOpenFileName(
-            self, "Выбрать файл", ".", "Чертж(*.cdw);;Спецификация(*.spw)")[0]]
-        if filename[0]:
-            self.fill_list(draw_list=filename)
+        file_path = filedialog.askopenfilename(
+            initialdir="",
+            title="Выбор чертежей",
+            filetypes=(("Спецификация", "*.spw"), ("Чертёж", "*.cdw"))
+        )
+        if file_path:
+            self.fill_list(draw_list=[file_path])
             self.merge_files_button.setEnabled(True)
 
     def add_folder_to_list(self):
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".")
+        directory_path = filedialog.askdirectory(title="Укажите папку с чертежами")
         draw_list = []
-        if folder:
-            draw_list = self.get_files_in_one_folder(folder)
+        if directory_path:
+            draw_list = self.get_files_in_one_folder(directory_path)
         if draw_list:
             self.fill_list(draw_list=draw_list)
             self.merge_files_button.setEnabled(True)
@@ -788,7 +796,7 @@ class UiMerger(MakeWidgets):
     def increase_step(self, start=True):
         if start:
             self.current_progress += self.progress_step
-            self.progress_bar.setValue(self.current_progress)
+            self.progress_bar.setValue(int(self.current_progress))
 
     def switch_button_group(self, switch=None):
         if not switch:
@@ -865,7 +873,7 @@ class MyBrandThread(QThread):
     choose_folder = pyqtSignal(bool)
     kill_thread = pyqtSignal()
     increase_step = pyqtSignal(bool)
-    progress_bar = pyqtSignal(float)
+    progress_bar = pyqtSignal(int)
 
     def __init__(self, files, directory, data_queue):
         self.files = files
@@ -891,6 +899,7 @@ class MyBrandThread(QThread):
         if not merger.settings_window.checkBox_5.isChecked():
             os.startfile(pdf_file)
         self.status.emit(f'Закрытие Kompas')
+        self.progress_bar.emit(int(0))
         kompas_api.exit_kompas(self.appl)
         self.status.emit('Слитие успешно завершено')
 
@@ -1029,10 +1038,10 @@ class MyBrandThread(QThread):
         pdf_doc = fitz.open(pdf_file)  # open the PDF
         rect = fitz.Rect(position)  # where to put image: use upper left corner
         for page in pdf_doc:
-            if not page._isWrapped:
-                page._wrapContents()
+            if not page.is_wrapped:
+                page.wrap_contents()
             try:
-                page.insertImage(rect, filename=image, overlay=False)
+                page.insert_image(rect, filename=image, overlay=False)
             except ValueError:
                 self.send_errors.emit(
                     'Заданы неверные координаты, размещения картинки, водяной знак не был добавлен'
@@ -1101,7 +1110,7 @@ class DataBaseThread(QThread):
     increase_step = pyqtSignal(bool)
     status = pyqtSignal(str)
     finished = pyqtSignal(dict, bool, bool)
-    progress_bar = pyqtSignal(float)
+    progress_bar = pyqtSignal(int)
     calculate_step = pyqtSignal(int, bool, bool)
     buttons_enable = pyqtSignal(bool)
 

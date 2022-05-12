@@ -213,7 +213,7 @@ class SettingsWindow(QtWidgets.QDialog):
             if os.stat(file_dir+r'\settings.json').st_size > 0:
                 data = open('settings.json', encoding='utf-8-sig')
         except OSError:
-            self.construct_class.error('Файл settings.txt \n отсутсвует')
+            self.construct_class.send_error('Файл settings.txt \n отсутсвует')
             return
         try:
             obj = json.load(data)

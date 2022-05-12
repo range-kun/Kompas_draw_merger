@@ -42,7 +42,6 @@ class MakeWidgets(QtWidgets.QMainWindow):
         text_edit = QtWidgets.QTextEdit(parent or self.centralwidget)
         text_edit.setStatusTip(status)
         text_edit.setPlainText(text)
-        font.setPointSize(11)
         text_edit.setFont(font)
         text_edit.setPlaceholderText(placeholder)
         if size_policy:
@@ -152,14 +151,19 @@ class MakeWidgets(QtWidgets.QMainWindow):
         return radio_button
 
     def fill_list(self, *, draw_list, widget_list=None):
+        font = QtGui.QFont()
+        font.setFamily("Arial")
+        font.setPointSize(9)
+
         if widget_list != None:
             widget = widget_list
         else:
             widget = self.listWidget
-        for file in draw_list:
+        for file_path in draw_list:
             item = QtWidgets.QListWidgetItem()
-            item.setText(file)
+            item.setText(file_path)
             item.setCheckState(QtCore.Qt.Checked)
+            item.setFont(font)
             widget.addItem(item)
 
     def remove_item(self, *, widget_list=None):
