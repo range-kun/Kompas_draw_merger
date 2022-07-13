@@ -114,7 +114,7 @@ class UiMerger(MakeWidgets):
         self.merge_files_button = self.make_button(
             text="Склеить файлы",
             font=font,
-            command=self.check_lines
+            command=self.merge_files
         )
         self.gridLayout.addWidget(self.merge_files_button, 13, 0, 1, 4)
 
@@ -610,7 +610,7 @@ class UiMerger(MakeWidgets):
     def get_all_files_in_folder(self, search_path=None):
         search_path = search_path or self.search_path
         draw_list = []
-        except_folders_list = self.get_items_in_list(self.settings_window.listWidget)
+        except_folders_list = self.get_items_in_list(self.settings_window.exclude_folder_list_widget)
         self.listWidget.clear()
         self.bypassing_folders_inside_checkbox_status = 'Yes' \
             if self.bypassing_folders_inside_checkbox.isChecked() else 'No'
@@ -638,7 +638,7 @@ class UiMerger(MakeWidgets):
         draw_list = map(os.path.normpath, draw_list)
         return draw_list
 
-    def check_lines(self):
+    def merge_files(self):
         if self.serch_in_folder_radio_button.isChecked() and os.path.isfile(self.source_of_draws_field.toPlainText()):
             self.send_error('Укажите папку для сливания')
             return
@@ -691,7 +691,7 @@ class UiMerger(MakeWidgets):
         self.data_queue = queue.Queue()
         search_path = self.search_path if self.serch_in_folder_radio_button.isChecked() \
             else os.path.dirname(self.specification_path)
-        self.thread = MyBrandThread(draws_list, search_path, self.data_queue)
+        self.thread = MergeThread(draws_list, search_path, self.data_queue)
         self.thread.buttons_enable.connect(self.switch_button_group)
         self.thread.increase_step.connect(self.increase_step)
         self.thread.kill_thread.connect(self.stop_merge_thread)
@@ -809,7 +809,7 @@ class UiMerger(MakeWidgets):
         self.choose_specification_button.setEnabled(switch)
 
     def choose_folder(self, signal):
-        # signal отправляется из треда MyBrandThread
+        # signal отправляется из треда MergeThread
         dict_for_pdf = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".",
                                                                   QtWidgets.QFileDialog.ShowDirsOnly)
         if not dict_for_pdf:
@@ -819,23 +819,23 @@ class UiMerger(MakeWidgets):
 
     def get_all_filters(self):
         filters = {}
-        if self.settings_window.checkBox.isChecked():
-            date_1 = self.settings_window.dateEdit.dateTime().toSecsSinceEpoch()
-            date_2 = self.settings_window.dateEdit_2.dateTime().toSecsSinceEpoch()
+        if self.settings_window.filter_by_date_check_box.isChecked():
+            date_1 = self.settings_window.first_date_input.dateTime().toSecsSinceEpoch()
+            date_2 = self.settings_window.last_date_input.dateTime().toSecsSinceEpoch()
             filters['date_1'] = date_1
             filters['date_2'] = date_2
-        if self.settings_window.checkBox_2.isChecked():
-            if self.settings_window.search_by_spec_radio_button.isChecked():
-                constructor_name = self.settings_window.lineEdit.text()
+        if self.settings_window.filter_by_draw_designer.isChecked():
+            if self.settings_window.constructor_from_combobox_radio_button.isChecked():
+                constructor_name = str(self.settings_window.constructor_combo_box.currentText())
             else:
-                constructor_name = str(self.settings_window.comboBox.currentText())
+                constructor_name = self.settings_window.random_constructor_line_edit.text()
             if constructor_name:
                 filters['constructor_name'] = constructor_name
-        if self.settings_window.checkBox_3.isChecked():
-            if self.settings_window.radio_button_4.isChecked():
-                checker_name = self.settings_window.lineEdit_2.text()
+        if self.settings_window.select_checker_name_radio_button.isChecked():
+            if self.settings_window.checker_from_combobox_radio_button.isChecked():
+                checker_name = str(self.settings_window.checker_combo_box.currentText())
             else:
-                checker_name = str(self.settings_window.comboBox_2.currentText())
+                checker_name = self.settings_window.random_checker_line_input.text()
             if checker_name:
                 filters['checker_name'] = checker_name
         return filters
@@ -866,7 +866,7 @@ class UiMerger(MakeWidgets):
         self.data_base_thread.start()
 
 
-class MyBrandThread(QThread):
+class MergeThread(QThread):
     buttons_enable = pyqtSignal(bool)
     errors = pyqtSignal(str)
     status = pyqtSignal(str)
@@ -896,7 +896,7 @@ class MyBrandThread(QThread):
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
         os.system(f'explorer "{(os.path.normpath(os.path.dirname(single_draw_dir)))}"')
-        if not merger.settings_window.checkBox_5.isChecked():
+        if not merger.settings_window.split_files_by_size_checkbox.isChecked():
             os.startfile(pdf_file)
         self.status.emit(f'Закрытие Kompas')
         self.progress_bar.emit(int(0))
@@ -904,7 +904,7 @@ class MyBrandThread(QThread):
         self.status.emit('Слитие успешно завершено')
 
     def create_folders(self):
-        if merger.settings_window.radio_button_8.isChecked():
+        if merger.settings_window.auto_choose_save_folder_radio_button.isChecked():
             base_pdf_dir, single_draw_dir, main_name = self.make_paths()
         else:
             self.choose_folder.emit(True)
@@ -929,7 +929,7 @@ class MyBrandThread(QThread):
             main_name = os.path.basename(merger.specification_path)[:-4]
         else:
             main_name = os.path.basename(self.search_path)
-        if not merger.settings_window.checkBox_5.isChecked():  # if not required to divide file
+        if not merger.settings_window.split_files_by_size_checkbox.isChecked():  # if not required to divide file
             base_pdf_dir = rf'{directory_to_save or self.search_path}\pdf'
             pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, main_name, today_date)
         else:
@@ -940,14 +940,14 @@ class MyBrandThread(QThread):
         # next code check if folder or file with same name exists if so:
         # get maximum number of file and folder and incriminate +1 to
         # name of new file and folder
-        check_path = os.path.dirname(base_pdf_dir) if merger.settings_window.checkBox_5.isChecked() else base_pdf_dir
+        check_path = os.path.dirname(base_pdf_dir) if merger.settings_window.split_files_by_size_checkbox.isChecked() else base_pdf_dir
         if os.path.exists(check_path) and main_name in ' '.join(os.listdir(check_path)):
             string_of_files = ' '.join(os.listdir(check_path))
             today_update = max(map(int, re.findall(rf'{main_name} - (\d\d)(?= {today_date})', string_of_files)),
                                default=0)
             if today_update:
                 today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
-                if merger.settings_window.checkBox_5.isChecked():
+                if merger.settings_window.split_files_by_size_checkbox.isChecked():
                     single_draw_dir = r'%s\pdf\%s - %s %s\Однодетальные' % (directory_to_save or self.search_path,
                                                                             main_name, today_update, today_date)
                 else:
@@ -985,7 +985,7 @@ class MyBrandThread(QThread):
                                         f'{format_name}-{main_name}.pdf')
                 with open(pdf_file, 'wb') as pdf:
                     merger_writer.write(pdf)
-                if merger.settings_window.checkBox_4.isChecked():
+                if merger.settings_window.add_water_mark_check_box.isChecked():
                     self.add_watermark(pdf_file)
             for key, item in merger_instance.items():
                 _, _, files = item
@@ -998,14 +998,14 @@ class MyBrandThread(QThread):
                 merger_instance.write(pdf)
             for file in merger_instance.inputs:
                 file[0].close()
-            if merger.settings_window.checkBox_4.isChecked():
+            if merger.settings_window.add_water_mark_check_box.isChecked():
                 self.add_watermark(pdf_file)
 
         return pdf_file
 
     def create_merger_instance(self, directory, files):
         #  если нужно разбиваем файлы или сливаем всё в один
-        if merger.settings_window.checkBox_5.isChecked():
+        if merger.settings_window.split_files_by_size_checkbox.isChecked():
             merger_instance = {595: ["A4", PyPDF2.PdfFileWriter(), []], 841: ["A3", PyPDF2.PdfFileWriter(), []],
                                1190: ["A2", PyPDF2.PdfFileWriter(), []], 1683: ["A1", PyPDF2.PdfFileWriter(), []]}
         else:
@@ -1022,13 +1022,13 @@ class MyBrandThread(QThread):
                 merger_instance.append(fileobj=file)
             self.increase_step.emit(True)
             self.status.emit(f'Сливание {filename}')
-        if merger.settings_window.checkBox_5.isChecked():
+        if merger.settings_window.split_files_by_size_checkbox.isChecked():
             merger_instance = {key: value for key, value in merger_instance.items() if
                                value[1].getNumPages()}
         return merger_instance
 
     def add_watermark(self, pdf_file):
-        image = merger.settings_window.lineEdit_3.text()
+        image = merger.settings_window.custom_watermark_path_edit_line.text()
         position = merger.settings_window.watermark_position
         if not image or not position:
             return

@@ -1,32 +1,30 @@
 ﻿{
   "except_folders_list":
-          [
-              "Былое",
-              "Проработка"
-          ],
+    [
+      "Былое",
+      "Проработка"
+    ],
   "constructor_list":
-          [
-            "",
-            "Дугин",
-            "Мишнева",
-            "Педан",
-            "Рыженков",
-            "Липодат"
-          ],
+    [
+      "",
+      "Иванов",
+      "Петров",
+      "Сидоров"
+    ],
   "checker_list":
-          [
-            "",
-            "Педан"
-          ],
+    [
+      "",
+      "Иванов"
+    ],
   "add_default_watermark": true,
   "watermark_path": "watermark.png",
   "watermark_position":
-          [
-            0,
-            0,
-            170,
-            170
-          ],
+    [
+      0,
+      0,
+      170,
+      170
+    ],
   "sort_files": false,
   "auto_save_folder": false
 }
