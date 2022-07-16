@@ -6,16 +6,20 @@
     ],
   "constructor_list":
     [
-      "",
       "Иванов",
       "Петров",
       "Сидоров"
     ],
   "checker_list":
     [
-      "",
       "Иванов"
     ],
+  "sortament_list":
+  [
+    "Труба",
+    "Профиль",
+    "Лист"
+  ],
   "add_default_watermark": true,
   "watermark_path": "watermark.png",
   "watermark_position":

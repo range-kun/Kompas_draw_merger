@@ -60,6 +60,8 @@ class UiMerger(MakeWidgets):
     def setup_ui(self):
         self.setObjectName("Merger")
         font = QtGui.QFont()
+        self.setWindowTitle("Настройки")
+
         sizepolicy = \
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Ignored)
         sizepolicy_button = \
@@ -831,7 +833,7 @@ class UiMerger(MakeWidgets):
                 constructor_name = self.settings_window.random_constructor_line_edit.text()
             if constructor_name:
                 filters['constructor_name'] = constructor_name
-        if self.settings_window.select_checker_name_radio_button.isChecked():
+        if self.settings_window.select_checker_name_checkbox.isChecked():
             if self.settings_window.checker_from_combobox_radio_button.isChecked():
                 checker_name = str(self.settings_window.checker_combo_box.currentText())
             else:

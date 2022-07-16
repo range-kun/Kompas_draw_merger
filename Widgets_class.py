@@ -99,8 +99,17 @@ class MakeWidgets(QtWidgets.QMainWindow):
 
     @staticmethod
     def fill_combo_box(array, widget):
+        if type(widget) == CheckableComboBox:
+            widget.fill_combo_box(array)
+            return
         for i in array:
             widget.addItem(i)
+
+    def create_checkable_combobox(self, parent=None, font=None):
+        checkable_combobox = CheckableComboBox(parent or self.centralwidget)
+        if font:
+            checkable_combobox.setFont(font)
+        return checkable_combobox
 
     def add_item(self, array, name, widget):
         if all(name.lower() != i.lower() for i in array):
@@ -181,3 +190,32 @@ class MakeWidgets(QtWidgets.QMainWindow):
         return [str(list_widget.item(i).text()) for i in range(list_widget.count())
                 if list_widget.item(i).checkState()]
 
+
+class CheckableComboBox(QtWidgets.QComboBox):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.view().pressed.connect(self.handle_item_pressed)
+
+    def handle_item_pressed(self, index):
+        item = self.model().itemFromIndex(index)
+        if item.checkState() == QtCore.Qt.Checked:
+            item.setCheckState(QtCore.Qt.Unchecked)
+        else:
+            item.setCheckState(QtCore.Qt.Checked)
+
+    def fill_combo_box(self, array):
+        for index, element in enumerate(array):
+            self.addItem(element)
+            item = self.model().item(index, 0)
+            item.setCheckState(QtCore.Qt.Unchecked)
+
+    def item_checked(self, index):
+        item = self.model().item(index, 0)
+        return item.checkState() == QtCore.Qt.Checked
+
+    def collect_checked_items(self):
+        checked_items = []
+        for index in range(self.count()):
+            if self.item_checked(index):
+                checked_items.append(self.model().item(index, 0).text())
+        return checked_items
