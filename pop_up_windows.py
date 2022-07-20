@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from _datetime import datetime
-from PyQt5 import QtCore, QtGui, QtWidgets
-from Widgets_class import MakeWidgets
 import json
 import os
+from _datetime import datetime
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+from Widgets_class import MakeWidgets, ExcludeFolderListWidget
 
 
 class SettingsWindow(QtWidgets.QDialog):
@@ -299,7 +301,7 @@ class SettingsWindow(QtWidgets.QDialog):
         )
         self.grid_layout.addWidget(self.exclude_folder_label, 13, 0, 1, 3)
 
-        self.exclude_folder_list_widget = QtWidgets.QListWidget(self.grid_layout_widget)
+        self.exclude_folder_list_widget = ExcludeFolderListWidget(self.grid_layout_widget)
         self.exclude_folder_list_widget.setFont(self.font)
         self.grid_layout.addWidget(self.exclude_folder_list_widget, 14, 0, 2, 2)
 
@@ -308,7 +310,7 @@ class SettingsWindow(QtWidgets.QDialog):
             parent=self.grid_layout_widget,
             font=self.font,
             size_policy=self.date_policy,
-            command=self.add_folder
+            command=self.exclude_folder_list_widget.add_folder
         )
         self.grid_layout.addWidget(self.add_exclude_folder_button,  14, 2, 1, 1)
 
@@ -317,7 +319,7 @@ class SettingsWindow(QtWidgets.QDialog):
             parent=self.grid_layout_widget,
             font=self.font,
             size_policy=self.date_policy,
-            command=self.delete_folder
+            command=self.exclude_folder_list_widget.remove_item
         )
         self.grid_layout.addWidget(self.delete_exclude_folder_button, 15, 2, 1, 1)
 
@@ -361,9 +363,7 @@ class SettingsWindow(QtWidgets.QDialog):
                     'sortament_list', 'add_default_watermark', 'watermark_path',
                     'watermark_position', 'sort_files', 'auto_save_folder')
         settings_methods = [
-            (self.construct_class.fill_list, (),
-             {'widget_list': self.exclude_folder_list_widget, 'draw_list': self.except_folders_list
-              }),
+            (self.exclude_folder_list_widget.fill_list, (), {'draw_list': self.except_folders_list}),
             (self.construct_class.fill_combo_box, (self.constructor_list, self.constructor_combo_box), {}),
             (self.construct_class.fill_combo_box, (self.checker_list, self.checker_combo_box), {}),
             (self.construct_class.fill_combo_box, (self.sortament_list, self.gauge_combo_box), {}),
@@ -478,14 +478,6 @@ class SettingsWindow(QtWidgets.QDialog):
             )[0]
             if filename:
                 self.custom_watermark_path_edit_line.setText(filename)
-
-    def add_folder(self):
-        folder_name, ok = QtWidgets.QInputDialog.getText(self, "Дилог ввода текста", "Введите название папки")
-        if ok:
-            self.construct_class.fill_list(draw_list=[folder_name], widget_list=self.exclude_folder_list_widget)
-
-    def delete_folder(self):
-        self.construct_class.remove_item(widget_list=self.exclude_folder_list_widget)
 
     def select_gauge_type(self):
         self.gauge_combo_box.setEnabled(self.select_gauge_checkbox.isChecked())

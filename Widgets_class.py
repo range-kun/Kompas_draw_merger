@@ -1,3 +1,5 @@
+import os
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 
@@ -37,8 +39,15 @@ class MakeWidgets(QtWidgets.QMainWindow):
             plain_text.setSizePolicy(size_policy)
         return plain_text
 
-    def make_text_edit(self, *, text=None, status=None, parent=None,
-                        placeholder=None, size_policy=None, font=None):
+    def make_text_edit(
+            self, *,
+            text=None,
+            status=None,
+            parent=None,
+            placeholder=None,
+            size_policy=None,
+            font=None
+    ):
         text_edit = QtWidgets.QTextEdit(parent or self.centralwidget)
         text_edit.setStatusTip(status)
         text_edit.setPlainText(text)
@@ -119,18 +128,6 @@ class MakeWidgets(QtWidgets.QMainWindow):
         else:
             self.send_error('Имя уже добавлено в список')
 
-    def make_menu(self):
-        menu = self.menuBar()
-        for name, items in self.menu_list:
-            pulldown=menu.addMenu(name)
-            self.addMenuItems(pulldown, items)
-
-    def addMenuItems(self, pulldown, items):
-        for item in items:
-            command = QtWidgets.QAction(item[0],self)
-            command.triggered.connect(item[1])
-            pulldown.addAction(command)
-
     def send_error(self, message):
         error_dialog = QtWidgets.QErrorMessage(self)
         error_dialog.setWindowModality(QtCore.Qt.WindowModal)
@@ -159,34 +156,8 @@ class MakeWidgets(QtWidgets.QMainWindow):
             radio_button.clicked.connect(command)
         return radio_button
 
-    def fill_list(self, *, draw_list, widget_list=None):
-        font = QtGui.QFont()
-        font.setFamily("Arial")
-        font.setPointSize(9)
-
-        if widget_list != None:
-            widget = widget_list
-        else:
-            widget = self.listWidget
-        for file_path in draw_list:
-            item = QtWidgets.QListWidgetItem()
-            item.setText(file_path)
-            item.setCheckState(QtCore.Qt.Checked)
-            item.setFont(font)
-            widget.addItem(item)
-
-    def remove_item(self, *, widget_list=None):
-        if widget_list.baseSize:
-            widget = widget_list
-        else:
-            widget = self.listWidget
-        list_items = widget.selectedItems()
-        if not list_items:
-            return
-        for item in list_items:
-            widget.takeItem(widget.row(item))
-
-    def get_items_in_list(self, list_widget):
+    @staticmethod
+    def get_items_in_list(list_widget):
         return [str(list_widget.item(i).text()) for i in range(list_widget.count())
                 if list_widget.item(i).checkState()]
 
@@ -219,3 +190,85 @@ class CheckableComboBox(QtWidgets.QComboBox):
             if self.item_checked(index):
                 checked_items.append(self.model().item(index, 0).text())
         return checked_items
+
+
+class ListWidget(QtWidgets.QListWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+    def fill_list(self, *, draw_list,):
+        font = QtGui.QFont()
+        font.setFamily("Arial")
+        font.setPointSize(9)
+
+        for file_path in draw_list:
+            item = QtWidgets.QListWidgetItem()
+            item.setText(file_path)
+            item.setCheckState(QtCore.Qt.Checked)
+            item.setFont(font)
+            self.addItem(item)
+
+
+class MainListWidget(ListWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.itemDoubleClicked.connect(self.open_item)
+
+    def get_items_text_data(self):
+        items = self.get_selected_items()
+        return [str(item.text()) for item in items]
+
+    @staticmethod
+    def open_item(item):
+        path = item.text()
+        os.system(fr'explorer "{os.path.normpath(os.path.dirname(path))}"')
+        os.startfile(path)
+
+    def select_all(self):
+        items = self.get_not_selected_items()
+        if items:
+            for item in items:
+                item.setCheckState(QtCore.Qt.Checked)
+
+    def unselect_all(self):
+        items = self.get_selected_items()
+        if items:
+            for item in items:
+                item.setCheckState(QtCore.Qt.Unchecked)
+
+    def get_selected_items(self):
+        items = (self.item(index) for index in range(self.count()) if self.item(index).checkState())
+        return items
+
+    def get_not_selected_items(self):
+        items = (self.item(index) for index in range(self.count()) if not self.item(index).checkState())
+        return items
+
+    def move_item_down(self):
+        current_row = self.currentRow()
+        current_item = self.takeItem(current_row)
+        self.insertItem(current_row + 1, current_item)
+        self.setCurrentRow(current_row + 1)
+
+    def move_item_up(self):
+        current_row = self.currentRow()
+        current_item = self.takeItem(current_row)
+        self.insertItem(current_row - 1, current_item)
+        self.setCurrentRow(current_row - 1)
+
+
+class ExcludeFolderListWidget(ListWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+    def add_folder(self):
+        folder_name, ok = QtWidgets.QInputDialog.getText(self, "Дилог ввода текста", "Введите название папки")
+        if ok:
+            self.fill_list(draw_list=[folder_name])
+
+    def remove_item(self):
+        list_items = self.selectedItems()
+        if not list_items:
+            return
+        for item in list_items:
+            self.takeItem(self.row(item))

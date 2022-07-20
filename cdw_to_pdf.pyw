@@ -23,8 +23,8 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from win32com.client import Dispatch
 
 import kompas_api
-from kompas_api import DocNotOpened, StampCell, get_kompas_file_data
-from Widgets_class import MakeWidgets
+from kompas_api import StampCell, get_kompas_file_data
+from Widgets_class import MakeWidgets, MainListWidget
 from pop_up_windows import SettingsWindow, RadioButtonsWindow
 
 
@@ -92,16 +92,47 @@ class UiMerger(MakeWidgets):
         self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
         self.gridLayout.setContentsMargins(0, 0, 0, 0)
 
+        self.setup_upper_list_buttons(font)
+
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
+        self.gridLayout.addLayout(self.horizontalLayout, 8, 0, 1, 4)
+
+        self.list_widget = MainListWidget(self.gridLayoutWidget)
+        self.horizontalLayout.addWidget(self.list_widget)
+
+        self.verticalLayout = QtWidgets.QVBoxLayout()
+        self.horizontalLayout.addLayout(self.verticalLayout)
+
+        self.move_line_up_button = self.make_button(
+            text='\n\n',
+            size_policy=sizepolicy_button_2,
+            command=self.list_widget.move_item_up
+        )
+        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
+        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
+
+        self.move_line_down_button = self.make_button(
+            text='\n\n',
+            size_policy=sizepolicy_button_2,
+            command=self.list_widget.move_item_down
+        )
+        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
+        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
+
+        self.verticalLayout.addWidget(self.move_line_up_button)
+        self.verticalLayout.addWidget(self.move_line_down_button)
+
         self.select_all_button = self.make_button(
             text='Выделить все',
-            font=font, command=self.select_all,
+            font=font,
+            command=self.list_widget.select_all,
             size_policy=sizepolicy_button
         )
         self.gridLayout.addWidget(self.select_all_button, 10, 0, 1, 1)
 
         self.remove_selection_button = self.make_button(
             text="Снять выделение",
-            font=font, command=self.unselect_all,
+            font=font, command=self.list_widget.unselect_all,
             size_policy=sizepolicy_button
         )
         self.gridLayout.addWidget(self.remove_selection_button, 10, 1, 1, 1)
@@ -134,12 +165,6 @@ class UiMerger(MakeWidgets):
         )
         self.gridLayout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
 
-        self.clear_draw_list_button = self.make_button(
-            text="Очистить спискок и выбор папки для поиска",
-            font=font,
-            command=self.clear_data
-        )
-        self.gridLayout.addWidget(self.clear_draw_list_button, 4, 0, 1, 2)
 
         self.additional_settings_button = self.make_button(
             text="Дополнительные настройки",
@@ -147,13 +172,6 @@ class UiMerger(MakeWidgets):
             command=self.show_settings
         )
         self.gridLayout.addWidget(self.additional_settings_button, 11, 0, 1, 2)
-
-        self.refresh_draw_list_button = self.make_button(
-            text='Обновить список файлов для склеивания',
-            font=font,
-            command=self.refresh_draws_in_list
-        )
-        self.gridLayout.addWidget(self.refresh_draw_list_button, 4, 2, 1, 2)
 
         self.choose_data_base_button = self.make_button(
             text='Выбор файла\n с базой чертежей',
@@ -230,34 +248,6 @@ class UiMerger(MakeWidgets):
         )
         self.gridLayout.addWidget(self.search_by_spec_radio_button, 3, 0, 1, 1)
 
-        self.horizontalLayout = QtWidgets.QHBoxLayout()
-        self.gridLayout.addLayout(self.horizontalLayout, 8, 0, 1, 4)
-
-        self.listWidget = QtWidgets.QListWidget(self.gridLayoutWidget)
-        self.listWidget.itemDoubleClicked.connect(self.open_item)
-        self.horizontalLayout.addWidget(self.listWidget)
-
-        self.verticalLayout = QtWidgets.QVBoxLayout()
-        self.horizontalLayout.addLayout(self.verticalLayout)
-
-        self.move_line_up_button = self.make_button(
-            text='\n\n',
-            size_policy=sizepolicy_button_2,
-            command=self.move_item_up
-        )
-        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
-        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
-
-        self.move_line_down_button = self.make_button(
-            text='\n\n', size_policy=sizepolicy_button_2,
-            command=self.move_item_down
-        )
-        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
-        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
-
-        self.verticalLayout.addWidget(self.move_line_up_button)
-        self.verticalLayout.addWidget(self.move_line_down_button)
-
         self.progress_bar = QtWidgets.QProgressBar(self.gridLayoutWidget)
         self.progress_bar.setTextVisible(False)
         self.gridLayout.addWidget(self.progress_bar, 15, 0, 1, 4)
@@ -267,6 +257,51 @@ class UiMerger(MakeWidgets):
         self.status_bar.setObjectName("statusbar")
         self.setStatusBar(self.status_bar)
         QtCore.QMetaObject.connectSlotsByName(self)
+
+    def setup_upper_list_buttons(self, font):
+        upper_items_list_layout = QtWidgets.QHBoxLayout()
+        self.gridLayout.addLayout(upper_items_list_layout, 4, 0, 1, 4)
+
+        clear_draw_list_button = self.make_button(
+            text="Очистить спискок и выбор папки для поиска",
+            font=font,
+            command=self.clear_data
+        )
+        upper_items_list_layout.addWidget(clear_draw_list_button)
+
+        self.refresh_draw_list_button = self.make_button(
+            text='Обновить файлы для склеивания',
+            font=font,
+            command=self.refresh_draws_in_list
+        )
+        upper_items_list_layout.addWidget(self.refresh_draw_list_button)
+
+        save_items_list = self.make_button(
+            text='Скопироваты выбранные файлы',
+            font=font,
+            command=self.copy_files_from_items_list
+        )
+        upper_items_list_layout.addWidget(save_items_list)
+
+    def copy_files_from_items_list(self):
+        file_paths = self.list_widget.get_items_text_data()
+
+        dst_path = filedialog.askdirectory(title="Укажите папку для сохранения")
+        if not dst_path:
+            self.send_error('Папка не была указана')
+            return
+        for file_path in file_paths:
+            try:
+                base = os.path.basename(file_path)
+                shutil.copyfile(fr'{file_path}', fr'{dst_path}/{base}')
+            except PermissionError:
+                self.send_error(
+                    'У вас недостаточно прав для копирования в указанную папку копирование остановлено'
+                )
+                return
+            except shutil.SameFileError:
+                continue
+        self.send_error('Копирование завершено')
 
     def choose_initial_folder(self):
         directory_path = filedialog.askdirectory(title="Укажите папку для поиска")
@@ -280,7 +315,7 @@ class UiMerger(MakeWidgets):
                 if self.progress_step:
                     self.apply_filters(draw_list)
                 else:
-                    self.fill_list(draw_list=draw_list)
+                    self.list_widget.fill_list(draw_list=draw_list)
             else:
                 self.get_data_base(draw_list)
 
@@ -297,18 +332,6 @@ class UiMerger(MakeWidgets):
                 return draw_list
             else:
                 return None
-
-    def move_item_up(self):
-        current_row = self.listWidget.currentRow()
-        current_item = self.listWidget.takeItem(current_row)
-        self.listWidget.insertItem(current_row - 1, current_item)
-        self.listWidget.setCurrentRow(current_row - 1)
-
-    def move_item_down(self):
-        current_row = self.listWidget.currentRow()
-        current_item = self.listWidget.takeItem(current_row)
-        self.listWidget.insertItem(current_row + 1, current_item)
-        self.listWidget.setCurrentRow(current_row + 1)
 
     def choose_specification(self):
         file_path = filedialog.askopenfilename(
@@ -369,7 +392,7 @@ class UiMerger(MakeWidgets):
         return 1
 
     def get_paths_to_specifications(self, refresh=False):
-        self.listWidget.clear()
+        self.list_widget.clear()
         filename = self.path_to_spec_field.toPlainText()
         if not filename:
             return
@@ -402,14 +425,14 @@ class UiMerger(MakeWidgets):
             self.print_out_errors(ErrorType.FILE_MISSING)
         if self.draw_list:
             if refresh:
-                self.fill_list(draw_list=self.draw_list)
+                self.list_widget.fill_list(draw_list=self.draw_list)
                 self.start_merge_process(draw_list)
             else:
                 self.calculate_step(len(draw_list), filter_only=True)
                 if self.progress_step:
                     self.apply_filters(draw_list)
                 else:
-                    self.fill_list(draw_list=self.draw_list)
+                    self.list_widget.fill_list(draw_list=self.draw_list)
                     self.switch_button_group(True)
 
     def change_bypassing_sub_assemblies_chekbox_status(self):
@@ -486,13 +509,13 @@ class UiMerger(MakeWidgets):
             draw_list = self.check_search_path(search_path)
             if not draw_list:
                 return
-            self.listWidget.clear()
+            self.list_widget.clear()
             self.calculate_step(len(draw_list), filter_only=True)
             if self.progress_step:
                 self.apply_filters(draw_list)
             else:
                 self.send_error('Обновление завершено')
-                self.fill_list(draw_list=draw_list)
+                self.list_widget.fill_list(draw_list=draw_list)
         else:
             search_path = self.source_of_draws_field.toPlainText()
             specification = self.path_to_spec_field.toPlainText()
@@ -515,7 +538,7 @@ class UiMerger(MakeWidgets):
         # If merger button is clicked then script checks if files been already filtered,
         # and filter settings didn't change
         # If nothing changed script skips this step
-        draw_list = draw_list or self.get_items_in_list(self.listWidget)
+        draw_list = draw_list or self.list_widget.get_items_text_data()
         filters = self.get_all_filters()
         if not filter_only:
             if filters == self.previous_filters and self.search_path == self.source_of_draws_field.toPlainText():
@@ -534,7 +557,7 @@ class UiMerger(MakeWidgets):
             self.send_error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
-            self.listWidget.clear()
+            self.list_widget.clear()
             self.switch_button_group(True)
             return
         if errors_list:
@@ -543,7 +566,7 @@ class UiMerger(MakeWidgets):
         if filter_only:
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
-            self.fill_list(draw_list=draw_list)
+            self.list_widget.fill_list(draw_list=draw_list)
             self.switch_button_group(True)
             return
         else:
@@ -634,7 +657,8 @@ class UiMerger(MakeWidgets):
         search_path = search_path or self.search_path
         draw_list = []
         except_folders_list = self.get_items_in_list(self.settings_window.exclude_folder_list_widget)
-        self.listWidget.clear()
+
+        self.list_widget.clear()
         self.bypassing_folders_inside_checkbox_status = 'Yes' \
             if self.bypassing_folders_inside_checkbox.isChecked() else 'No'
         if self.bypassing_folders_inside_checkbox.isChecked() \
@@ -700,7 +724,7 @@ class UiMerger(MakeWidgets):
             self.merge_files_in_one()
 
     def merge_files_in_one(self):
-        draws_list = self.get_items_in_list(self.listWidget)
+        draws_list = self.list_widget.get_items_text_data()
         if not draws_list:
             self.send_error('Нету файлов для слития')
             return
@@ -741,21 +765,7 @@ class UiMerger(MakeWidgets):
                                               ".cdw или .spw \n или файл с базой данных в формате .json")
         self.path_to_spec_field.clear()
         self.path_to_spec_field.setPlaceholderText('Укажите путь до файла со спецификацией')
-        self.listWidget.clear()
-
-    def select_all(self):
-        files = (self.listWidget.item(i) for i
-                 in range(self.listWidget.count()) if not self.listWidget.item(i).checkState())
-        if files:
-            for file in files:
-                file.setCheckState(QtCore.Qt.Checked)
-
-    def unselect_all(self):
-        files = (self.listWidget.item(i) for i
-                 in range(self.listWidget.count()) if self.listWidget.item(i).checkState())
-        if files:
-            for file in files:
-                file.setCheckState(QtCore.Qt.Unchecked)
+        self.list_widget.clear()
 
     def add_file_to_list(self):
         file_path = filedialog.askopenfilename(
@@ -764,7 +774,7 @@ class UiMerger(MakeWidgets):
             filetypes=(("Спецификация", "*.spw"), ("Чертёж", "*.cdw"))
         )
         if file_path:
-            self.fill_list(draw_list=[file_path])
+            self.list_widget.fill_list(draw_list=[file_path])
             self.merge_files_button.setEnabled(True)
 
     def add_folder_to_list(self):
@@ -773,14 +783,8 @@ class UiMerger(MakeWidgets):
         if directory_path:
             draw_list = self.get_files_in_one_folder(directory_path)
         if draw_list:
-            self.fill_list(draw_list=draw_list)
+            self.list_widget.fill_list(draw_list=draw_list)
             self.merge_files_button.setEnabled(True)
-
-    @staticmethod
-    def open_item(item):
-        path = item.text()
-        os.system(fr'explorer "{os.path.normpath(os.path.dirname(path))}"')
-        os.startfile(path)
 
     def show_settings(self):
         self.settings_window.exec_()
@@ -833,8 +837,10 @@ class UiMerger(MakeWidgets):
 
     def choose_folder(self, signal):
         # signal отправляется из треда MergeThread
-        dict_for_pdf = QtWidgets.QFileDialog.getExistingDirectory(self, "Выбрать папку", ".",
-                                                                  QtWidgets.QFileDialog.ShowDirsOnly)
+        dict_for_pdf = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Выбрать папку", ".",
+            QtWidgets.QFileDialog.ShowDirsOnly
+        )
         if not dict_for_pdf:
             self.data_queue.put('Not_chosen')
         else:
