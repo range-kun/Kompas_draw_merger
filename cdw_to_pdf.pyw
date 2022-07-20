@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from enum import Enum
 import itertools
 import json
 import os
@@ -10,8 +11,8 @@ import shutil
 import sys
 import time
 from operator import itemgetter
-from typing import Optional
 from tkinter import filedialog
+from typing import Optional
 
 import PyPDF2
 import fitz
@@ -22,8 +23,14 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from win32com.client import Dispatch
 
 import kompas_api
+from kompas_api import DocNotOpened, StampCell, get_kompas_file_data
 from Widgets_class import MakeWidgets
 from pop_up_windows import SettingsWindow, RadioButtonsWindow
+
+
+class ErrorType(Enum):
+    FILE_MISSING = 1
+    FILE_NOT_OPENED = 2
 
 
 def except_hook(cls, exception, traceback):
@@ -374,25 +381,6 @@ class UiMerger(MakeWidgets):
                 self.send_error(response)  # ошибка при открытии спецификации
         self.start_recursion(refresh)
 
-    def handle_specification_result(self, missing_list, draw_list, refresh):
-        self.status_bar.showMessage('Завершено получение файлов из спецификации')
-        self.appl = None
-        self.missing_list.extend(missing_list)
-        self.draw_list = draw_list
-        if self.missing_list:
-            self.print_out_missing_files()
-        if self.draw_list:
-            if refresh:
-                self.fill_list(draw_list=self.draw_list)
-                self.start_merge_process(draw_list)
-            else:
-                self.calculate_step(len(draw_list), filter_only=True)
-                if self.progress_step:
-                    self.apply_filters(draw_list)
-                else:
-                    self.fill_list(draw_list=self.draw_list)
-                    self.switch_button_group(True)
-
     def start_recursion(self, refresh):
         only_one_specification = not self.bypassing_sub_assemblies_chekbox.isChecked()
         self.bypassing_sub_assemblies_chekbox_status = 'Yes' \
@@ -404,6 +392,25 @@ class UiMerger(MakeWidgets):
         self.recursive_thread.status.connect(self.status_bar.showMessage)
         self.recursive_thread.errors.connect(self.send_error)
         self.recursive_thread.start()
+
+    def handle_specification_result(self, missing_list, draw_list, refresh):
+        self.status_bar.showMessage('Завершено получение файлов из спецификации')
+        self.appl = None
+        self.missing_list.extend(missing_list)
+        self.draw_list = draw_list
+        if self.missing_list:
+            self.print_out_errors(ErrorType.FILE_MISSING)
+        if self.draw_list:
+            if refresh:
+                self.fill_list(draw_list=self.draw_list)
+                self.start_merge_process(draw_list)
+            else:
+                self.calculate_step(len(draw_list), filter_only=True)
+                if self.progress_step:
+                    self.apply_filters(draw_list)
+                else:
+                    self.fill_list(draw_list=self.draw_list)
+                    self.switch_button_group(True)
 
     def change_bypassing_sub_assemblies_chekbox_status(self):
         if self.bypassing_sub_assemblies_chekbox.isChecked():
@@ -417,7 +424,26 @@ class UiMerger(MakeWidgets):
         else:
             self.bypassing_folders_inside_checkbox_current_status = 'No'
 
-    def print_out_missing_files(self):
+    def print_out_errors(self, error_type: ErrorType) -> str | None:
+        def group_missing_files_info():
+            grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
+            grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
+            missing_message = '\n'.join(grouped_list)
+            return missing_message
+
+        def create_missing_files_message() -> tuple[str, str]:
+            window_title = "Отсуствующие чертежи"
+            error_message = f"Не были найдены следующи чертежи:\n{missing_message} {''.join(one_line_messages)}" \
+                            f"\nСохранить список?"
+            return window_title, error_message
+
+        def create_file_erorrs_message() -> tuple[str, str]:
+            window_title = "Ошибки при обработке файлов"
+            error_message = f"Были получены следующие ошибки при " \
+                            f"обработке файлов:\n{missing_message} {''.join(one_line_messages)}" \
+                            f"\nСохранить список?"
+            return window_title, error_message
+
         one_line_messages = []
         grouped_messages = []
         for error in self.missing_list:
@@ -425,27 +451,31 @@ class UiMerger(MakeWidgets):
                 one_line_messages.append(error)
             else:
                 grouped_messages.append(error)
+        missing_message = group_missing_files_info()
 
-        grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
-        grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
-        missing_message = '\n'.join(grouped_list)
+        if error_type == ErrorType.FILE_MISSING:
+            title, message = create_missing_files_message()
+        elif error_type == ErrorType.FILE_NOT_OPENED:
+            title, message = create_file_erorrs_message()
+
         choice = QtWidgets.QMessageBox.question(
-            self, 'Отсуствующие чертежи',
-            f"Не были найдены следующи чертежи:\n{missing_message}, {''.join(one_line_messages)}"
-            f"\nСохранить список?",
+            self, title, message,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
+
         self.missing_list = []
-        if choice == QtWidgets.QMessageBox.Yes:
-            filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
-            if filename:
-                try:
-                    with open(filename, 'w') as file:
-                        file.write(missing_message)
-                        file.writelines(one_line_messages)
-                except:
-                    self.send_error("Ошибка записи")
-                    return
+        if choice != QtWidgets.QMessageBox.Yes:
+            return
+        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
+        if not filename:
+            return
+        try:
+            with open(filename, 'w') as file:
+                file.write(missing_message)
+                file.writelines(one_line_messages)
+        except Exception:
+            self.send_error("Ошибка записи")
+            return
 
     def refresh_draws_in_list(self, refresh=False):
         if self.serch_in_folder_radio_button.isChecked():
@@ -483,8 +513,8 @@ class UiMerger(MakeWidgets):
     def apply_filters(self, draw_list=None, filter_only=True):
         # If refresh button is clicked then all files will be filtered anyway
         # If merger button is clicked then script checks if files been already filtered,
-        # and settings didn't change
-        # If so script skips this step
+        # and filter settings didn't change
+        # If nothing changed script skips this step
         draw_list = draw_list or self.get_items_in_list(self.listWidget)
         filters = self.get_all_filters()
         if not filter_only:
@@ -497,7 +527,7 @@ class UiMerger(MakeWidgets):
         self.filter_thread.finished.connect(self.handle_filter_results)
         self.filter_thread.start()
 
-    def handle_filter_results(self, draw_list, filter_only=True):
+    def handle_filter_results(self, draw_list, errors_list: list[str], filter_only=True):
         self.status_bar.showMessage('Филтрация успешно завршена')
         self.appl = None
         if not draw_list:
@@ -507,6 +537,9 @@ class UiMerger(MakeWidgets):
             self.listWidget.clear()
             self.switch_button_group(True)
             return
+        if errors_list:
+            self.missing_list = errors_list
+            self.print_out_errors(ErrorType.FILE_NOT_OPENED)
         if filter_only:
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
@@ -521,18 +554,6 @@ class UiMerger(MakeWidgets):
             self.status.emit(f'Закрытие Kompas')
             kompas_api.exit_kompas(self.appl)
         event.accept()
-
-    def handle_data_base_results(self, data_base, appl, refresh=False):
-        self.progress_bar.setValue(0)
-        self.status_bar.showMessage('Завершено получение Базы Данных')
-        if appl:
-            self.appl = None
-        if data_base:
-            self.data_base_files = data_base
-            self.save_data_base()
-            self.get_paths_to_specifications(refresh)
-        else:
-            self.send_error('Нету файлов с обозначением в штампе')
 
     def save_data_base(self):
         choice = QtWidgets.QMessageBox.question(
@@ -619,7 +640,7 @@ class UiMerger(MakeWidgets):
         if self.bypassing_folders_inside_checkbox.isChecked() \
                 or self.search_by_spec_radio_button.isChecked():
             for this_dir, dirs, files_here in os.walk(search_path, topdown=True):
-                dirs[:] = [d for d in dirs if d not in except_folders_list]
+                dirs[:] = [directory for directory in dirs if directory not in except_folders_list]
                 if os.path.basename(this_dir) in except_folders_list:
                     continue
                 else:
@@ -685,7 +706,7 @@ class UiMerger(MakeWidgets):
             return
         self.calculate_step(len(draws_list))
         self.switch_button_group(False)
-        reply = self.apply_filters(draws_list, False)
+        reply = self.apply_filters(draws_list, filter_only=False)
         if reply:
             self.start_merge_process(draws_list)
 
@@ -826,20 +847,38 @@ class UiMerger(MakeWidgets):
             date_2 = self.settings_window.last_date_input.dateTime().toSecsSinceEpoch()
             filters['date_1'] = date_1
             filters['date_2'] = date_2
+
         if self.settings_window.filter_by_draw_designer.isChecked():
             if self.settings_window.constructor_from_combobox_radio_button.isChecked():
-                constructor_name = str(self.settings_window.constructor_combo_box.currentText())
+                constructors_list = self.settings_window.constructor_combo_box.collect_checked_items()
             else:
-                constructor_name = self.settings_window.random_constructor_line_edit.text()
-            if constructor_name:
-                filters['constructor_name'] = constructor_name
+                constructors_list = self.settings_window.random_constructor_line_edit.text()
+            if constructors_list:
+                filters['constructors_list'] = constructors_list
+
         if self.settings_window.select_checker_name_checkbox.isChecked():
             if self.settings_window.checker_from_combobox_radio_button.isChecked():
-                checker_name = str(self.settings_window.checker_combo_box.currentText())
+                checkers_list = self.settings_window.checker_combo_box.collect_checked_items()
             else:
-                checker_name = self.settings_window.random_checker_line_input.text()
+                checkers_list = [self.settings_window.random_checker_line_input.text()]
+            if checkers_list:
+                filters['checkers_list'] = checkers_list
+
+        if self.settings_window.select_checker_name_checkbox.isChecked():
+            if self.settings_window.checker_from_combobox_radio_button.isChecked():
+                checker_name = self.settings_window.checker_combo_box.collect_checked_items()
+            else:
+                checker_name = [self.settings_window.random_checker_line_input.text()]
             if checker_name:
-                filters['checker_name'] = checker_name
+                filters['checkers_name'] = checker_name
+
+        if self.settings_window.select_gauge_checkbox.isChecked():
+            if self.settings_window.gauge_from_combobox_radio_button.isChecked():
+                gauge_list = self.settings_window.gauge_combo_box.collect_checked_items()
+            else:
+                gauge_list = [self.settings_window.random_gauge_line_input.text()]
+            if gauge_list:
+                filters['gauge_list'] = gauge_list
         return filters
 
     def get_data_base(self, files=None, refresh=False):
@@ -866,6 +905,27 @@ class UiMerger(MakeWidgets):
         self.data_base_thread.increase_step.connect(self.increase_step)
         self.data_base_thread.finished.connect(self.handle_data_base_results)
         self.data_base_thread.start()
+
+    def handle_data_base_results(
+            self,
+            data_base: dict[str, list[str]],
+            errors_list: list[str],
+            reset_application: bool,
+            refresh=False
+    ):
+        self.progress_bar.setValue(0)
+        self.status_bar.showMessage('Завершено получение Базы Данных')
+        if reset_application:
+            self.appl = None
+        if data_base:
+            self.data_base_files = data_base
+            self.save_data_base()
+            self.get_paths_to_specifications(refresh)
+        else:
+            self.send_error('Нету файлов с обозначением в штампе')
+        if errors_list:
+            self.missing_list = errors_list
+            self.print_out_errors(ErrorType.FILE_NOT_OPENED)
 
 
 class MergeThread(QThread):
@@ -938,11 +998,16 @@ class MergeThread(QThread):
             base_pdf_dir = r'%s\pdf\%s - 01 %s' % (directory_to_save or self.search_path,
                                                    main_name, today_date)
             pdf_file = r'%s\%s.pdf' % (base_pdf_dir, main_name)
+
         single_draw_dir = os.path.splitext(pdf_file)[0] + " Однодетальные"
         # next code check if folder or file with same name exists if so:
         # get maximum number of file and folder and incriminate +1 to
         # name of new file and folder
-        check_path = os.path.dirname(base_pdf_dir) if merger.settings_window.split_files_by_size_checkbox.isChecked() else base_pdf_dir
+        if merger.settings_window.split_files_by_size_checkbox.isChecked():
+            check_path = os.path.dirname(base_pdf_dir)
+        else:
+            check_path = base_pdf_dir
+
         if os.path.exists(check_path) and main_name in ' '.join(os.listdir(check_path)):
             string_of_files = ' '.join(os.listdir(check_path))
             today_update = max(map(int, re.findall(rf'{main_name} - (\d\d)(?= {today_date})', string_of_files)),
@@ -967,14 +1032,13 @@ class MergeThread(QThread):
         app.HideMessage = const.ksHideMessageYes
 
         number = 0
-
         for file in files:
             number += 1
             self.increase_step.emit(True)
             self.status.emit(f'Конвертация {file}')
-            converter.Convert(file, single_draw_dir + "\\" +
-                              f'{number} ' + os.path.basename(file) + ".pdf", 0, False
-                              )
+            converter.Convert(
+                file, single_draw_dir + "\\" + f'{number} ' + os.path.basename(file) + ".pdf", 0, False
+            )
         app.HideMessage = const.ksHideMessageNo
 
     def merge_pdf_files(self, directory_with_draws, main_name):
@@ -1053,65 +1117,94 @@ class MergeThread(QThread):
 
 
 class FilterThread(QThread):
-    finished = pyqtSignal(list, bool)
+    finished = pyqtSignal(list, list, bool)
     increase_step = pyqtSignal(bool)
     status = pyqtSignal(str)
 
-    def __init__(self, draw_list, filters, filter_only=True):
-        self.draw_list = draw_list
+    def __init__(self, draw_paths_list, filters, filter_only=True):
+        self.draw_paths_list = draw_paths_list
         self.filters = filters
         self.appl = None
         self.filter_only = filter_only
+        self.errors_list = []
         QThread.__init__(self)
 
     def run(self):
-        self.filter_draws(self.draw_list, **self.filters)
+        filtered_paths_draw_list = self.filter_draws(**self.filters)
         self.status.emit(f'Закрытие Kompas')
         kompas_api.exit_kompas(self.appl)
-        self.finished.emit(self.draw_list, self.filter_only)
+        self.finished.emit(filtered_paths_draw_list, self.errors_list, self.filter_only)
 
-    def filter_draws(self, files, *, date_1=None, date_2=None,
-                     constructor_name=None, checker_name=None):
+    def filter_draws(
+            self,
+            *,
+            date_1=None,
+            date_2=None,
+            constructors_list: list[str]=None,
+            checker_list: list[str]=None,
+            gauge_list: list[str]=None
+    ) -> list[str]:
         self.status.emit("Открытие Kompas")
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         self.appl = application
         app = application.Application
         docs = app.Documents
         draw_list = []
-        if date_1:
-            date_1_in_seconds, date_2_in_seconds = sorted([date_1, date_2])
         app.HideMessage = const.ksHideMessageNo  # отключаем отображение сообщений Компас, отвечая на всё "нет"
-        for file in files:  # структура обработки для каждого документа
-            self.status.emit(f'Применение фильтров к {file}')
+
+        for file_path in self.draw_paths_list:  # структура обработки для каждого документа
+            self.status.emit(f'Применение фильтров к {file_path}')
             self.increase_step.emit(True)
-            doc, doc2d = kompas_api.get_right_api(file, docs, kompas_api7_module)
-            draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
-            if date_1:
-                date_in_stamp = draw_stamp.Text(130).Str
-                if date_in_stamp:
-                    try:
-                        date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
-                    except:
-                        continue
-                    if not date_1_in_seconds <= date_in_stamp <= date_2_in_seconds:
-                        continue
-            if constructor_name:
-                constructor_in_stamp = draw_stamp.Text(110).Str
-                if constructor_name not in constructor_in_stamp:
+            with get_kompas_file_data(file_path, docs, kompas_api7_module, const) as kompas_data:
+                if type(kompas_data) == str:
+                    self.errors_list.append(kompas_data)
                     continue
-            if checker_name:
-                checker_in_stamp = draw_stamp.Text(115).Str
-                if checker_in_stamp not in checker_in_stamp:
-                    continue
-            draw_list.append(file)
-            doc.Close(const.kdDoNotSaveChanges)
-        self.draw_list = draw_list
+
+                doc, doc2d = kompas_data
+                draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
+
+                if date_1:
+                    if not self.filter_by_date_cell(date_1, date_2, draw_stamp):
+                        continue
+                file_is_ok = True
+                for data_list, stamp_cell in [
+                    (constructors_list, StampCell.CONSTRUCTOR_NAME_CELL),
+                    (checker_list, StampCell.CHECKER_NAME_CELL),
+                    (gauge_list, StampCell.GAUGE_CELL)
+                ]:
+                    if data_list:
+                        if not self.filter_file_by_cell_value(data_list, stamp_cell, draw_stamp):
+                            file_is_ok = False
+                            break
+            if file_is_ok:
+                draw_list.append(file_path)
+        return draw_list
+
+    @staticmethod
+    def filter_by_date_cell(date_1, date_2, draw_stamp):
+        date_in_stamp = draw_stamp.Text(StampCell.CONSTRUCTOR_DATE_CELL).Str
+        if date_in_stamp:
+            try:
+                date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
+            except:
+                return False
+
+            date_1_in_seconds, date_2_in_seconds = sorted([date_1, date_2])
+            if not date_1_in_seconds <= date_in_stamp <= date_2_in_seconds:
+                return False
+
+    @staticmethod
+    def filter_file_by_cell_value(filter_data_list: list[str], stamp_cell_number: StampCell, draw_stamp):
+        data_in_stamp = draw_stamp.Text(stamp_cell_number).Str
+        if any(filtered_data in data_in_stamp for filtered_data in filter_data_list):
+            return True
+        return False
 
 
 class DataBaseThread(QThread):
     increase_step = pyqtSignal(bool)
     status = pyqtSignal(str)
-    finished = pyqtSignal(dict, bool, bool)
+    finished = pyqtSignal(dict, list, bool, bool)
     progress_bar = pyqtSignal(int)
     calculate_step = pyqtSignal(int, bool, bool)
     buttons_enable = pyqtSignal(bool)
@@ -1120,7 +1213,8 @@ class DataBaseThread(QThread):
         self.draw_list = draw_list
         self.refresh = refresh
         self.appl = None
-        self.files_dict = {}
+        self.files_dict: dict[str, list[str]] = {}
+        self.errors_list: list[str] = []
         QThread.__init__(self)
 
     def run(self):
@@ -1131,10 +1225,10 @@ class DataBaseThread(QThread):
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
         if self.appl:
-            reset = True
+            reset_application = True
         else:
-            reset = False
-        self.finished.emit(self.files_dict, reset, self.refresh)
+            reset_application = False
+        self.finished.emit(self.files_dict, self.errors_list, reset_application, self.refresh)
 
     def create_data_base(self):
         pythoncom.CoInitializeEx(0)
@@ -1145,8 +1239,7 @@ class DataBaseThread(QThread):
             if cur_meta == 'Обозначение':
                 meta_obozn = x  # присваиваем номер метаданных
                 break
-            # if cur_meta == 'Наименование':
-            #     meta_name = x  # присваиваем номер метаданных
+
         for file in self.draw_list:
             self.status.emit(f'Получение атрибутов {file}')
             self.increase_step.emit(True)
@@ -1177,10 +1270,12 @@ class DataBaseThread(QThread):
             for key, cdw_files, spw_files in double_files:
                 temp_files = []
                 self.increase_step.emit(True)
+
                 if len(cdw_files) > 1:
                     self.files_dict[key] = [i for i in self.files_dict[key] if i.endswith('spw')]
                     path = self.get_right_path(cdw_files, const, kompas_api7_module, docs)
                     temp_files = [path]
+
                 if len(spw_files) > 1:
                     self.files_dict[key] = [i for i in self.files_dict[key] if i.endswith('cdw')]
                     path = self.get_right_path(spw_files, const, kompas_api7_module, docs)
@@ -1189,6 +1284,7 @@ class DataBaseThread(QThread):
                     self.files_dict[key].extend(temp_files)
                 else:
                     self.files_dict[key] = temp_files
+
             self.status.emit(f'Закрытие Kompas')
             kompas_api.exit_kompas(self.appl)
 
@@ -1199,20 +1295,26 @@ class DataBaseThread(QThread):
         max_date_in_stamp = 0
         for path in same_double_paths:
             self.status.emit(f'Сравнение даты для {path}')
-            date_of_creation = os.stat(path).st_ctime
-            doc, doc2d = kompas_api.get_right_api(path, docs, kompas_api7_module)
-            draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
-            date_in_stamp = draw_stamp.Text(130).Str
-            try:
-                date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
-            except:
-                date_in_stamp = 0
-            if date_in_stamp >= max_date_in_stamp:
-                if date_in_stamp > max_date_in_stamp:
-                    max_date_in_stamp = date_in_stamp
-                    temp_dict = {}
-                temp_dict[path] = date_of_creation
-            doc.Close(const.kdDoNotSaveChanges)
+            with get_kompas_file_data(path, docs, kompas_api7_module, const) as kompas_data:
+                if type(kompas_data) == str:
+                    self.errors_list.append(kompas_data)
+                    continue
+
+                doc, doc2d = kompas_data
+                draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
+                date_in_stamp = draw_stamp.Text(StampCell.CONSTRUCTOR_DATE_CELL).Str
+                try:
+                    date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
+                except:
+                    date_in_stamp = 0
+                if date_in_stamp >= max_date_in_stamp:
+                    if date_in_stamp > max_date_in_stamp:
+                        max_date_in_stamp = date_in_stamp
+                        temp_dict = {}
+
+                    date_of_creation = os.stat(path).st_ctime
+                    temp_dict[path] = date_of_creation
+
         sorted_paths = sorted(temp_dict, key=temp_dict.get)
         return sorted_paths[0]
 

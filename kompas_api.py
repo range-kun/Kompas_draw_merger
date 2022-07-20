@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+from contextlib import contextmanager
 import enum
 import os
 import time
@@ -18,6 +19,17 @@ WITHOUT_EXECUTION = 1000
 class ObjectType(enum.IntEnum):
     OBOZN_ISP = 4
     REGULAR_LINE = 1
+
+
+class StampCell(enum.IntEnum):
+    GAUGE_CELL = 3
+    CONSTRUCTOR_NAME_CELL = 110
+    CHECKER_NAME_CELL = 115
+    CONSTRUCTOR_DATE_CELL = 130
+
+
+class DocNotOpened(Exception):
+    pass
 
 
 def get_kompas_api7():
@@ -60,12 +72,13 @@ def get_kompas_settings(application, kompas_object):
     return app, i_converter, docs
 
 
-def get_right_api(file, docs, kompas_api7_module):
-    doc = docs.Open(file, False, False)  # открываем документ, в невидимом режиме для записи
-    if os.path.splitext(file)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
-        doc2d = kompas_api7_module.IKompasDocument2D(doc._oleobj_.QueryInterface
-                                                     (kompas_api7_module.IKompasDocument2D.CLSID,
-                                                      pythoncom.IID_IDispatch))
+def get_document_api(file_path: str, docs, kompas_api7_module):
+    doc = docs.Open(file_path, False, False)  # открываем документ, в невидимом режиме для записи
+    if doc is None:
+        raise DocNotOpened
+    if os.path.splitext(file_path)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
+        doc2d = kompas_api7_module.IKompasDocument2D(
+            doc._oleobj_.QueryInterface (kompas_api7_module.IKompasDocument2D.CLSID, pythoncom.IID_IDispatch))
     else:  # если спецификация, то используем интерфейс для спецификации
         doc2d = kompas_api7_module.ISpecificationDocument(
             doc._oleobj_.QueryInterface
@@ -82,11 +95,13 @@ def date_to_seconds(date_string):
     return time.mktime(struct_date)
 
 
-def get_draws_from_specification(spec_path: str, *,
-                                 only_document_list=False,
-                                 draw_obozn: str = None,
-                                 by_button_click=False,
-                                 column_number: list[int] = None):
+def get_draws_from_specification(
+        spec_path: str, *,
+        only_document_list=False,
+        draw_obozn: str = None,
+        by_button_click=False,
+        column_number: list[int] = None
+):
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     app.HideMessage = const.ksHideMessageYes
@@ -369,3 +384,17 @@ def verify_its_correct_spec_path(spec_path: str, execution: str):
 
     doc.Close(const.kdDoNotSaveChanges)
     return True
+
+
+@contextmanager
+def get_kompas_file_data(file_path: str, docs, kompas_api7_module, const):
+    try:
+        doc, doc2d = get_document_api(file_path, docs, kompas_api7_module)
+        yield doc, doc2d
+    except DocNotOpened:
+        doc = None
+        _, filename = os.path.split(file_path)
+        yield f'Не удалось открыть файл {filename} возможно файл создан в более новой версии \n'
+    finally:
+        if doc is not None:
+            doc.Close(const.kdDoNotSaveChanges)
