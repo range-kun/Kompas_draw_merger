@@ -25,7 +25,7 @@ from win32com.client import Dispatch
 import kompas_api
 from kompas_api import StampCell, get_kompas_file_data
 from Widgets_class import MakeWidgets, MainListWidget
-from pop_up_windows import SettingsWindow, RadioButtonsWindow
+from pop_up_windows import SettingsWindow, RadioButtonsWindow, FILE_NOT_EXISTS_MESSAGE
 
 
 class ErrorType(Enum):
@@ -656,7 +656,7 @@ class UiMerger(MakeWidgets):
     def get_all_files_in_folder(self, search_path=None):
         search_path = search_path or self.search_path
         draw_list = []
-        except_folders_list = self.get_items_in_list(self.settings_window.exclude_folder_list_widget)
+        except_folders_list = self.settings_window.exclude_folder_list_widget.get_items_text_data()
 
         self.list_widget.clear()
         self.bypassing_folders_inside_checkbox_status = 'Yes' \
@@ -1104,7 +1104,7 @@ class MergeThread(QThread):
         position = merger.settings_window.watermark_position
         if not image or not position:
             return
-        if not os.path.exists(image) or image == 'Стандартный путь из настроек не существует':
+        if not os.path.exists(image) or image == FILE_NOT_EXISTS_MESSAGE:
             self.send_errors.emit(f'Путь к файлу с картинкой не существует')
             return
         pdf_doc = fitz.open(pdf_file)  # open the PDF

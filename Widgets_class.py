@@ -79,14 +79,15 @@ class MakeWidgets(QtWidgets.QMainWindow):
         label.setAlignment(QtCore.Qt.AlignCenter)
         return label
 
-    def make_date(self, *, date_par, status=None, font=None, parent=None):
+    def make_date(self, *, date_par=None, status=None, font=None, parent=None):
         if parent:
             widget = QtWidgets.QDateEdit(parent)
         else:
             widget = QtWidgets.QDateEdit(self.centralwidget)
         if font:
             widget.setFont(font)
-        self.set_date(date_par, widget)
+        if date_par:
+            self.set_date(date_par, widget)
         widget.setStatusTip(status)
         return widget
 
@@ -208,15 +209,23 @@ class ListWidget(QtWidgets.QListWidget):
             item.setFont(font)
             self.addItem(item)
 
+    def get_items_text_data(self):
+        items = self.get_selected_items()
+        return [str(item.text()) for item in items]
+
+    def get_selected_items(self):
+        items = (self.item(index) for index in range(self.count()) if self.item(index).checkState())
+        return items
+
+    def get_not_selected_items(self):
+        items = (self.item(index) for index in range(self.count()) if not self.item(index).checkState())
+        return items
+
 
 class MainListWidget(ListWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.itemDoubleClicked.connect(self.open_item)
-
-    def get_items_text_data(self):
-        items = self.get_selected_items()
-        return [str(item.text()) for item in items]
 
     @staticmethod
     def open_item(item):
@@ -235,14 +244,6 @@ class MainListWidget(ListWidget):
         if items:
             for item in items:
                 item.setCheckState(QtCore.Qt.Unchecked)
-
-    def get_selected_items(self):
-        items = (self.item(index) for index in range(self.count()) if self.item(index).checkState())
-        return items
-
-    def get_not_selected_items(self):
-        items = (self.item(index) for index in range(self.count()) if not self.item(index).checkState())
-        return items
 
     def move_item_down(self):
         current_row = self.currentRow()
