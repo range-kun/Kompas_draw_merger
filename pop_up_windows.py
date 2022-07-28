@@ -1,38 +1,66 @@
 from __future__ import annotations
 
+from enum import Enum
+from collections import namedtuple
 from typing import NewType
 import json
 import os
-from _datetime import datetime
+from datetime import date
 
 from pydantic import BaseModel
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from Widgets_class import MakeWidgets, ExcludeFolderListWidget
+from utils import date_today_by_int
 
 DEFAULT_WATERMARK_PATH = 'bdt_stamp.png'
+DEFAULT_WATERMARK_LABEL = 'Стандартный'
 FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
+
 FilePath = NewType('FilePath', str)
 
 
-class FilterWidgetPositions(BaseModel):
-    check_box_position: list[int]
-    combobox_position: list[int]
-    input_line_position: list[int]
-    combobox_radio_button_position: list[int]
-    input_radio_button_position: list[int]
+FilterWidgetPositions = namedtuple(
+    'FilterWidgetPositions',
+    'check_box_position '
+    'combobox_position '
+    'input_line_position '
+    'combobox_radio_button_position '
+    'input_radio_button_position '
+)
 
 
 class UserSettings(BaseModel):
-    except_folders_list: list[str]
-    constructor_list: list[str]
-    checker_list: list[str]
-    sortament_list: list[str]
+    except_folders_list: list[str] | None
+    constructor_list: list[str] | None
+    checker_list: list[str] | None
+    sortament_list: list[str] | None
     watermark_position: list[int]
     add_default_watermark: bool = True
     split_file_by_size: bool = False
     auto_save_folder: bool = False
     watermark_path: FilePath
+
+
+class SaveType(Enum):
+    AUTO_SAVE_FOLDER = 1
+    MANUALLY_SAVE_FOLDER = 2
+
+
+class Filters(BaseModel):
+    date_range: list[int, int] | None = None
+    constructor_list: list[str] | None = None
+    checker_list: list[str] | None = None
+    sortament_list: list[str] | None = None
+
+
+class SettingsData(BaseModel):
+    filters: Filters | None = None
+    watermark_path: FilePath | None = None
+    watermark_position: list[int] | None = None
+    split_file_by_size: bool = False
+    save_type: SaveType = SaveType.AUTO_SAVE_FOLDER
+    except_folders_list: list[str] | None = None
 
 
 class SettingsWindow(QtWidgets.QDialog):
@@ -57,15 +85,59 @@ class SettingsWindow(QtWidgets.QDialog):
         self.check_box_policy = \
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Fixed)
 
-        self.construct_class = MakeWidgets()
-        self.date_today = [int(i) for i in str(datetime.date(datetime.now())).split('-')]
-        self.setup_ui()
-
         self.watermark_position = []
         self._watermark_path = ''
-        self.apply_user_settings()
 
-    def setup_ui(self):
+        self.construct_class = MakeWidgets()
+
+        self._setup_ui()
+        self._apply_user_settings()
+
+    def collect_settings_window_info(self) -> SettingsData:
+        date_range = self._collect_date_range_info()
+        constructor_list = self._constructor_filter.collect_filter_data()
+        checker_list = self._checker_filter.collect_filter_data()
+        sortament_list = self._gauge_filter.collect_filter_data()
+
+        filters = None
+        if any([date_range, constructor_list, checker_list, sortament_list]):
+            filters = Filters(
+                date_range=date_range,
+                constructor_list=constructor_list,
+                checker_list=checker_list,
+                sortament_list=sortament_list,
+            )
+        return SettingsData(
+            filters=filters,
+            watermark_path=self._get_watermark_path(),
+            watermark_position=self.watermark_position,
+            split_file_by_size=self._split_files_by_size_checkbox.isChecked(),
+            save_type=self._get_save_type(),
+            except_folders_list=self._exclude_folder_list_widget.get_items_text_data(),
+        )
+
+    def _collect_date_range_info(self) -> list[int, int] | None:
+        if not self._filter_by_date_check_box.isChecked():
+            return None
+        date_1 = self._first_date_input.dateTime().toSecsSinceEpoch()
+        date_2 = self._last_date_input.dateTime().toSecsSinceEpoch()
+        date_range = sorted([date_1, date_2])
+        return date_range
+
+    def _get_watermark_path(self) -> FilePath | None:
+        if not self._add_water_mark_check_box.isChecked():
+            return None
+        path = self._custom_watermark_path_edit_line.text()
+        if path == FILE_NOT_EXISTS_MESSAGE:
+            return None
+        return path
+
+    def _get_save_type(self):
+        if self._manually_choose_save_folder_radio_button.isChecked():
+            return SaveType.MANUALLY_SAVE_FOLDER
+        return SaveType.AUTO_SAVE_FOLDER
+
+    def _setup_ui(self):
         self.setObjectName("Form")
         self.resize(675, 520)
         self.setWindowTitle("Настройки")
@@ -77,42 +149,39 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout = QtWidgets.QGridLayout(self.grid_layout_widget)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.setup_filter_by_date_section()
+        self._setup_filter_by_date_section()
+        self._setup_filter_by_constructor_section()
+        self._setup_filter_by_checker_section()
+        self._setup_filter_by_gauge_section()
+        self._setup_watermark_section()
+        self._setup_split_by_size_section()
+        self._setup_save_file_path_section()
+        self._setup_exclude_folders_section()
+        self._setup_window_settings()
 
-        self.setup_filter_by_constructor_section()
-        self.setup_filter_by_checker_section()
-
-        self.setup_filter_by_gauge_section()
-        self.setup_watermark_section()
-        self.setup_split_by_size_section()
-        self.setup_save_file_path_section()
-        self.setup_exclude_folders_section()
-        self.setup_window_settings()
-
-    def setup_filter_by_date_section(self):
-        self.filter_by_date_check_box = self.construct_class.make_checkbox(
+    def _setup_filter_by_date_section(self):
+        self._filter_by_date_check_box = self.construct_class.make_checkbox(
             font=self.font,
             text='C датой только за указанный период',
-            command=self.switch_date_input_filter,
+            command=self._switch_date_input_filter,
             parent=self.grid_layout_widget
         )
-        self.filter_by_date_check_box.setSizePolicy(self.check_box_policy)
-        self.grid_layout.addWidget(self.filter_by_date_check_box, 1, 0, 1, 1)
+        self._filter_by_date_check_box.setSizePolicy(self.check_box_policy)
+        self.grid_layout.addWidget(self._filter_by_date_check_box, 1, 0, 1, 1)
 
-        self.first_date_input = self.construct_class.make_date(
+        self._first_date_input = self.construct_class.make_date(
             font=self.font,
             parent=self.grid_layout_widget
         )
-        self.grid_layout.addWidget(self.first_date_input, 1, 2, 1, 1)
+        self.grid_layout.addWidget(self._first_date_input, 1, 2, 1, 1)
 
-        self.last_date_input = self.construct_class.make_date(
+        self._last_date_input = self.construct_class.make_date(
             font=self.font,
             parent=self.grid_layout_widget
         )
-        self.last_date_input.setSizePolicy(self.date_policy)
-        self.grid_layout.addWidget(self.last_date_input, 1, 1, 1, 1)
+        self.grid_layout.addWidget(self._last_date_input, 1, 1, 1, 1)
 
-    def setup_filter_by_constructor_section(self):
+    def _setup_filter_by_constructor_section(self):
         constructor_positions = FilterWidgetPositions(
             check_box_position=[2, 0, 3, 1],
             combobox_position=[3, 1, 1, 1],
@@ -120,7 +189,7 @@ class SettingsWindow(QtWidgets.QDialog):
             combobox_radio_button_position=[2, 1, 1, 1],
             input_radio_button_position=[2, 2, 1, 1]
         )
-        self.constructor_filter = FilterSection(
+        self._constructor_filter = FilterSection(
             'С указанной фамилией разработчиков',
             'Фамилии из списка',
             constructor_positions,
@@ -133,7 +202,7 @@ class SettingsWindow(QtWidgets.QDialog):
             self.construct_class
         )
 
-    def setup_filter_by_checker_section(self):
+    def _setup_filter_by_checker_section(self):
         checker_positions = FilterWidgetPositions(
             check_box_position=[5, 0, 2, 1],
             combobox_position=[6, 1, 1, 1],
@@ -141,7 +210,7 @@ class SettingsWindow(QtWidgets.QDialog):
             combobox_radio_button_position=[5, 1, 1, 1],
             input_radio_button_position=[5, 2, 1, 1]
         )
-        self.checker_filter = FilterSection(
+        self._checker_filter = FilterSection(
             'С указанной фамилией проверяющего',
             'Фамилии из списка',
             checker_positions,
@@ -154,7 +223,7 @@ class SettingsWindow(QtWidgets.QDialog):
             self.construct_class
         )
 
-    def setup_filter_by_gauge_section(self):
+    def _setup_filter_by_gauge_section(self):
         gauge_positions = FilterWidgetPositions(
             check_box_position=[7, 0, 2, 1],
             combobox_position=[8, 1, 1, 1],
@@ -162,7 +231,7 @@ class SettingsWindow(QtWidgets.QDialog):
             combobox_radio_button_position=[7, 1, 1, 1],
             input_radio_button_position=[7, 2, 1, 1]
         )
-        self.gauger_filter = FilterSection(
+        self._gauge_filter = FilterSection(
             'С указанным сортаментом',
             'Сортамент из списка',
             gauge_positions,
@@ -175,120 +244,122 @@ class SettingsWindow(QtWidgets.QDialog):
             self.construct_class
         )
 
-    def setup_watermark_section(self):
-        self.add_water_mark_check_box = self.construct_class.make_checkbox(
+    def _setup_watermark_section(self):
+        self._add_water_mark_check_box = self.construct_class.make_checkbox(
             text='Добавить водяной знак',
             font=self.font, parent=self.grid_layout_widget,
-            command=self.switch_watermark_group
+            command=self._switch_watermark_group
         )
-        self.grid_layout.addWidget(self.add_water_mark_check_box, 9, 0, 2, 1)
+        self.grid_layout.addWidget(self._add_water_mark_check_box, 9, 0, 2, 1)
 
-        self.default_watermark_path_radio_button = self.construct_class.make_radio_button(
-            text='Стандартный', font=self.font,
+        self._default_watermark_path_radio_button = self.construct_class.make_radio_button(
+            text=DEFAULT_WATERMARK_LABEL,
+            font=self.font,
             parent=self.grid_layout_widget,
-            command=self.watermark_option
+            command=self._watermark_path_radio_option
         )
-        self.grid_layout.addWidget(self.default_watermark_path_radio_button, 9, 1, 1, 1)
+        self.grid_layout.addWidget(self._default_watermark_path_radio_button, 9, 1, 1, 1)
 
-        self.custom_watermark_path_radio_button = self.construct_class.make_radio_button(
+        self._custom_watermark_path_radio_button = self.construct_class.make_radio_button(
             text='Свое изображение', font=self.font,
             parent=self.grid_layout_widget,
-            command=self.watermark_option
+            command=self._watermark_path_radio_option
         )
-        self.grid_layout.addWidget(self.custom_watermark_path_radio_button, 9, 2, 1, 1)
+        self.grid_layout.addWidget(self._custom_watermark_path_radio_button, 9, 2, 1, 1)
 
-        self.custom_watermark_path_edit_line = self.construct_class.make_line_edit(
+        self._custom_watermark_path_edit_line = self.construct_class.make_line_edit(
             parent=self.grid_layout_widget,
             font=self.font_1
         )
-        self.grid_layout.addWidget(self.custom_watermark_path_edit_line, 10, 1, 1, 2)
+        self.grid_layout.addWidget(self._custom_watermark_path_edit_line, 10, 1, 1, 2)
 
-        self.watermark_path_btn_group = QtWidgets.QButtonGroup()
-        self.watermark_path_btn_group.addButton(self.default_watermark_path_radio_button)
-        self.watermark_path_btn_group.addButton(self.custom_watermark_path_radio_button)
+        self._watermark_path_btn_group = QtWidgets.QButtonGroup()
+        self._watermark_path_btn_group.addButton(self._default_watermark_path_radio_button)
+        self._watermark_path_btn_group.addButton(self._custom_watermark_path_radio_button)
 
-    def setup_split_by_size_section(self):
-        self.split_files_by_size_checkbox = self.construct_class.make_checkbox(
+    def _setup_split_by_size_section(self):
+        self._split_files_by_size_checkbox = self.construct_class.make_checkbox(
             text='Разбить на файлы по размерам',
             font=self.font,
             parent=self.grid_layout_widget
         )
-        self.grid_layout.addWidget(self.split_files_by_size_checkbox, 11, 0, 1, 1)
+        self.grid_layout.addWidget(self._split_files_by_size_checkbox, 11, 0, 1, 1)
 
-    def setup_save_file_path_section(self):
-        self.manually_choose_save_folder_radio_button = self.construct_class.make_radio_button(
+    def _setup_save_file_path_section(self):
+        self._manually_choose_save_folder_radio_button = self.construct_class.make_radio_button(
             text='Указать папку сохранения вручную',
             font=self.font_2,
             parent=self.grid_layout_widget
         )
-        self.grid_layout.addWidget(self.manually_choose_save_folder_radio_button, 12, 0, 1, 1)
+        self.grid_layout.addWidget(self._manually_choose_save_folder_radio_button, 12, 0, 1, 1)
 
-        self.auto_choose_save_folder_radio_button = self.construct_class.make_radio_button(
+        self._auto_choose_save_folder_radio_button = self.construct_class.make_radio_button(
             text='Выбрать папку автоматически',
             font=self.font_2,
             parent=self.grid_layout_widget
         )
-        self.grid_layout.addWidget(self.auto_choose_save_folder_radio_button, 12, 1, 1, 3)
+        self.grid_layout.addWidget(self._auto_choose_save_folder_radio_button, 12, 1, 1, 3)
 
-        self.save_folder_btngroup = QtWidgets.QButtonGroup()
-        self.save_folder_btngroup.addButton(self.manually_choose_save_folder_radio_button)
-        self.save_folder_btngroup.addButton(self.auto_choose_save_folder_radio_button)
+        save_folder_btngroup = QtWidgets.QButtonGroup()
+        save_folder_btngroup.addButton(self._manually_choose_save_folder_radio_button)
+        save_folder_btngroup.addButton(self._auto_choose_save_folder_radio_button)
 
-    def setup_exclude_folders_section(self):
-        self.exclude_folder_label = self.construct_class.make_label(
+    def _setup_exclude_folders_section(self):
+        exclude_folder_label = self.construct_class.make_label(
             text='Исключить следующие папки:',
             font=self.font,
             parent=self.grid_layout_widget
         )
-        self.grid_layout.addWidget(self.exclude_folder_label, 13, 0, 1, 3)
+        self.grid_layout.addWidget(exclude_folder_label, 13, 0, 1, 3)
 
-        self.exclude_folder_list_widget = ExcludeFolderListWidget(self.grid_layout_widget)
-        self.exclude_folder_list_widget.setFont(self.font)
-        self.grid_layout.addWidget(self.exclude_folder_list_widget, 14, 0, 2, 2)
+        self._exclude_folder_list_widget = ExcludeFolderListWidget(self.grid_layout_widget)
+        self._exclude_folder_list_widget.setFont(self.font)
+        self.grid_layout.addWidget(self._exclude_folder_list_widget, 14, 0, 2, 2)
 
-        self.add_exclude_folder_button = self.construct_class.make_button(
+        add_exclude_folder_button = self.construct_class.make_button(
             text='Добавить папку',
             parent=self.grid_layout_widget,
             font=self.font,
             size_policy=self.date_policy,
-            command=self.exclude_folder_list_widget.add_folder
+            command=self._exclude_folder_list_widget.add_folder
         )
-        self.grid_layout.addWidget(self.add_exclude_folder_button,  14, 2, 1, 1)
+        self.grid_layout.addWidget(add_exclude_folder_button,  14, 2, 1, 1)
 
-        self.delete_exclude_folder_button = self.construct_class.make_button(
+        delete_exclude_folder_button = self.construct_class.make_button(
             text='Удалить выбранную\n папку',
             parent=self.grid_layout_widget,
             font=self.font,
             size_policy=self.date_policy,
-            command=self.exclude_folder_list_widget.remove_item
+            command=self._exclude_folder_list_widget.remove_item
         )
-        self.grid_layout.addWidget(self.delete_exclude_folder_button, 15, 2, 1, 1)
+        self.grid_layout.addWidget(delete_exclude_folder_button, 15, 2, 1, 1)
 
-    def setup_window_settings(self):
-        self.reset_settings_button = self.construct_class.make_button(
+    def _setup_window_settings(self):
+        reset_settings_button = self.construct_class.make_button(
             text='Сбросить настройки',
             parent=self.grid_layout_widget,
             font=self.font,
-            command=self.set_default_settings
+            command=self._set_default_settings
         )
-        self.grid_layout.addWidget(self.reset_settings_button, 16, 1, 1, 3)
+        self.grid_layout.addWidget(reset_settings_button, 16, 1, 1, 3)
 
-        self.close_window_button = self.construct_class.make_button(
+        self._close_window_button = self.construct_class.make_button(
             text='Ок',
             parent=self.grid_layout_widget,
             font=self.font,
             command=self.close
         )
-        self.grid_layout.addWidget(self.close_window_button, 16, 0, 1, 1)
+        self.grid_layout.addWidget(self._close_window_button, 16, 0, 1, 1)
         QtCore.QMetaObject.connectSlotsByName(self)
 
-    def apply_user_settings(self):
-        loaded_user_settings = self.get_settings()
+    def _apply_user_settings(self):
+        loaded_user_settings = self._get_settings_from_file()
         self._watermark_path = loaded_user_settings.watermark_path
+        self.watermark_position = loaded_user_settings.watermark_position
         if loaded_user_settings:
-            self.fill_widgets_with_settings(loaded_user_settings)
+            self._fill_widgets_with_settings(loaded_user_settings)
 
-    def get_settings(self) -> UserSettings | None:
+    def _get_settings_from_file(self) -> UserSettings | None:
         try:
             file_dir = os.path.dirname(os.path.abspath(__file__))
             if os.stat(file_dir+r'\settings.json').st_size > 0:
@@ -299,52 +370,53 @@ class SettingsWindow(QtWidgets.QDialog):
             self.construct_class.send_error('Файл settings.txt \n отсутсвует')
             return
         except json.decoder.JSONDecodeError:
-            self.construct_class.error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
+            self.construct_class.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
             return
 
         return user_settings
 
-    def fill_widgets_with_settings(self, user_settings: UserSettings):
-        self.construct_class.set_date(self.date_today, self.first_date_input)
-        self.construct_class.set_date(self.date_today, self.last_date_input)
-        self.switch_date_input_filter()
+    def _fill_widgets_with_settings(self, user_settings: UserSettings):
+        self.construct_class.set_date(date_today_by_int(), self._first_date_input)
+        self.construct_class.set_date(date_today_by_int(), self._last_date_input)
+        self._switch_date_input_filter()
 
-        self.exclude_folder_list_widget.fill_list(draw_list=user_settings.except_folders_list)
+        if user_settings.except_folders_list:
+            self._exclude_folder_list_widget.fill_list(draw_list=user_settings.except_folders_list)
 
-        self.construct_class.fill_combo_box(user_settings.constructor_list, self.constructor_filter.data_combo_box)
-        self.constructor_filter.switch_filter_input()
+        self.construct_class.fill_combo_box(user_settings.constructor_list, self._constructor_filter.data_combo_box)
+        self._constructor_filter.switch_filter_input()
 
-        self.construct_class.fill_combo_box(user_settings.checker_list, self.checker_filter.data_combo_box)
-        self.checker_filter.switch_filter_input()
+        self.construct_class.fill_combo_box(user_settings.checker_list, self._checker_filter.data_combo_box)
+        self._checker_filter.switch_filter_input()
 
-        self.construct_class.fill_combo_box(user_settings.sortament_list, self.gauger_filter.data_combo_box)
-        self.gauger_filter.switch_filter_input()
+        self.construct_class.fill_combo_box(user_settings.sortament_list, self._gauge_filter.data_combo_box)
+        self._gauge_filter.switch_filter_input()
 
-        self.add_water_mark_check_box.setChecked(user_settings.add_default_watermark)
-        self.switch_watermark_group()
-        self.set_user_watermark_path()
+        self._add_water_mark_check_box.setChecked(user_settings.add_default_watermark)
+        self._switch_watermark_group()
+        self._set_user_watermark_path()
 
-        self.split_files_by_size_checkbox.setChecked(user_settings.split_file_by_size)
-        self.select_auto_folder(user_settings.auto_save_folder)
+        self._split_files_by_size_checkbox.setChecked(user_settings.split_file_by_size)
+        self._select_auto_folder(user_settings.auto_save_folder)
 
-    def switch_date_input_filter(self):
-        self.first_date_input.setEnabled(self.filter_by_date_check_box.isChecked())
-        self.last_date_input.setEnabled(self.filter_by_date_check_box.isChecked())
+    def _switch_date_input_filter(self):
+        self._first_date_input.setEnabled(self._filter_by_date_check_box.isChecked())
+        self._last_date_input.setEnabled(self._filter_by_date_check_box.isChecked())
 
-    def switch_watermark_group(self):
-        self.default_watermark_path_radio_button.setEnabled(self.add_water_mark_check_box.isChecked())
-        self.custom_watermark_path_radio_button.setEnabled(self.add_water_mark_check_box.isChecked())
-        self.custom_watermark_path_edit_line.setEnabled(False)
+    def _switch_watermark_group(self):
+        self._default_watermark_path_radio_button.setEnabled(self._add_water_mark_check_box.isChecked())
+        self._custom_watermark_path_radio_button.setEnabled(self._add_water_mark_check_box.isChecked())
+        self._custom_watermark_path_edit_line.setEnabled(False)
 
-        if self.add_water_mark_check_box.isChecked():
-            self.watermark_path_btn_group.setExclusive(True)
-            self.default_watermark_path_radio_button.setChecked(self.add_water_mark_check_box.isChecked())
+        if self._add_water_mark_check_box.isChecked():
+            self._watermark_path_btn_group.setExclusive(True)
+            self._default_watermark_path_radio_button.setChecked(self._add_water_mark_check_box.isChecked())
         else:
-            self.watermark_path_btn_group.setExclusive(False)
-            self.default_watermark_path_radio_button.setChecked(self.add_water_mark_check_box.isChecked())
-            self.custom_watermark_path_radio_button.setChecked(self.add_water_mark_check_box.isChecked())
+            self._watermark_path_btn_group.setExclusive(False)
+            self._default_watermark_path_radio_button.setChecked(self._add_water_mark_check_box.isChecked())
+            self._custom_watermark_path_radio_button.setChecked(self._add_water_mark_check_box.isChecked())
 
-    def get_user_watermark_path(self) -> str:
+    def _get_user_watermark_path(self) -> str:
         path = os.path.abspath(DEFAULT_WATERMARK_PATH)
         if not os.path.exists(path):
             path = os.path.abspath(self._watermark_path)
@@ -352,21 +424,15 @@ class SettingsWindow(QtWidgets.QDialog):
             raise OSError("Path not exists")
         return path
 
-    def set_user_watermark_path(self):
+    def _set_user_watermark_path(self):
         try:
-            self.custom_watermark_path_edit_line.setText(self.get_user_watermark_path())
+            self._custom_watermark_path_edit_line.setText(self._get_user_watermark_path())
         except OSError:
-            self.custom_watermark_path_edit_line.setText(FILE_NOT_EXISTS_MESSAGE)
+            self._custom_watermark_path_edit_line.setText(FILE_NOT_EXISTS_MESSAGE)
 
-    def watermark_option(self):
-        choosed_default_watermark = self.sender().text() == 'Стандартный'
-        self.custom_watermark_path_edit_line.setEnabled(not choosed_default_watermark)
-        if choosed_default_watermark:
-            self.custom_watermark_path_edit_line.clear()
-            self.set_user_watermark_path()
-        else:
-            self.custom_watermark_path_edit_line.clear()
-            filename = QtWidgets.QFileDialog.getOpenFileName(
+    def _watermark_path_radio_option(self):
+        def request_user_file() -> str | None:
+            user_filename = QtWidgets.QFileDialog.getOpenFileName(
                 self,
                 "Выбрать файл",
                 ".",
@@ -374,31 +440,37 @@ class SettingsWindow(QtWidgets.QDialog):
                 "jpg(*.jpg);;"
                 "bmp(*.bmp);;"
             )[0]
-            if filename:
-                self.custom_watermark_path_edit_line.setText(filename)
+            return user_filename
 
-    def select_auto_folder(self, auto_save_folder):
-        if auto_save_folder:
-            self.auto_choose_save_folder_radio_button.setChecked(True)
+        choosed_default_watermark = self.sender().text() == DEFAULT_WATERMARK_LABEL
+        self._custom_watermark_path_edit_line.setEnabled(not choosed_default_watermark)
+        self._custom_watermark_path_edit_line.clear()
+
+        if choosed_default_watermark:
+            self._set_user_watermark_path()
         else:
-            self.manually_choose_save_folder_radio_button.setChecked(True)
+            if filename := request_user_file():
+                self._custom_watermark_path_edit_line.setText(filename)
 
-    def clear_settings(self):
-        self.filter_by_date_check_box.setChecked(False)
+    def _select_auto_folder(self, auto_save_folder):
+        if auto_save_folder:
+            self._auto_choose_save_folder_radio_button.setChecked(True)
+        else:
+            self._manually_choose_save_folder_radio_button.setChecked(True)
 
-        for filter_line in (self.constructor_filter, self.checker_filter, self.gauger_filter):
+    def _clear_settings(self):
+        self._filter_by_date_check_box.setChecked(False)
+
+        for filter_line in (self._constructor_filter, self._checker_filter, self._gauge_filter):
             filter_line.select_filter_checkbox.setChecked(False)
             filter_line.data_combo_box.clear()
             filter_line.random_data_line_input.clear()
 
-        self.add_water_mark_check_box.setChecked(False)
-        self.split_files_by_size_checkbox.setChecked(False)
+        self._exclude_folder_list_widget.clear()
 
-        self.exclude_folder_list_widget.clear()
-
-    def set_default_settings(self):
-        self.clear_settings()
-        self.apply_user_settings()
+    def _set_default_settings(self):
+        self._clear_settings()
+        self._apply_user_settings()
 
 
 class FilterSection(QtWidgets.QDialog):
@@ -430,7 +502,7 @@ class FilterSection(QtWidgets.QDialog):
             text=self.combobox_info,
             font=self.font_1,
             parent=self.parent_widget,
-            command=self.choose_data_radio_option
+            command=self._choose_data_radio_option
         )
         self.parent.addWidget(
             self.data_from_combobox_radio_button,
@@ -441,7 +513,7 @@ class FilterSection(QtWidgets.QDialog):
             text='Другая',
             font=self.font_1,
             parent=self.parent_widget,
-            command=self.choose_data_radio_option
+            command=self._choose_data_radio_option
         )
         self.parent.addWidget(
             self.data_from_line_radio_button,
@@ -465,6 +537,16 @@ class FilterSection(QtWidgets.QDialog):
         self.random_data_line_input.setSizePolicy(self.size_policy)
         self.parent.addWidget(self.random_data_line_input, *self.widget_positions.input_line_position)
 
+    def collect_filter_data(self) -> list[str] | None:
+        if not self.select_filter_checkbox.isChecked():
+            return None
+
+        if self.data_from_combobox_radio_button.isChecked():
+            constructors_list = self.data_combo_box.collect_checked_items()
+        else:
+            constructors_list = [self.random_data_line_input.text()]
+        return constructors_list
+
     def switch_filter_input(self):
         self.data_from_combobox_radio_button.setEnabled(self.select_filter_checkbox.isChecked())
         self.data_from_line_radio_button.setEnabled(self.select_filter_checkbox.isChecked())
@@ -480,7 +562,7 @@ class FilterSection(QtWidgets.QDialog):
             self.data_from_combobox_radio_button.setChecked(self.select_filter_checkbox.isChecked())
             self.data_from_line_radio_button.setChecked(self.select_filter_checkbox.isChecked())
 
-    def choose_data_radio_option(self):
+    def _choose_data_radio_option(self):
         chosen_combo_box = self.sender().text() == self.combobox_info
         self.data_combo_box.setEnabled(chosen_combo_box)
         self.random_data_line_input.setEnabled(not chosen_combo_box)
@@ -499,9 +581,10 @@ class RadioButtonsWindow(QtWidgets.QDialog):
         self.font = QtGui.QFont()
         self.font.setFamily("Arial")
         self.font.setPointSize(12)
-        self.set_label()
-        self.set_options()
-        self.add_buttons()
+
+        self._set_label()
+        self._set_options()
+        self._add_buttons()
 
         self.radio_state = None
 
@@ -517,12 +600,12 @@ class RadioButtonsWindow(QtWidgets.QDialog):
             self.radio_state = None
         self.close()
 
-    def set_label(self):
+    def _set_label(self):
         plain_text = QtWidgets.QLabel('Выберите исполнение для слияния:')
         plain_text.setFont(self.font)
         self.layout.addWidget(plain_text, 0, 0, 1, 3)
 
-    def set_options(self):
+    def _set_options(self):
         for index, option in enumerate(self.executions):
             if type(option) != str:
                 continue
@@ -532,7 +615,7 @@ class RadioButtonsWindow(QtWidgets.QDialog):
             radiobutton.setFont(self.font)
             self.layout.addWidget(radiobutton, 2, index)
 
-    def add_buttons(self):
+    def _add_buttons(self):
         button_layout = QtWidgets.QHBoxLayout()
 
         ok_button = QtWidgets.QPushButton('OК')

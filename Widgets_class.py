@@ -109,6 +109,8 @@ class MakeWidgets(QtWidgets.QMainWindow):
 
     @staticmethod
     def fill_combo_box(array, widget):
+        if array is None:
+            return
         if type(widget) == CheckableComboBox:
             widget.fill_combo_box(array)
             return

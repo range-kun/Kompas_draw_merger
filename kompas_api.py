@@ -86,15 +86,6 @@ def get_document_api(file_path: str, docs, kompas_api7_module):
     return doc, doc2d
 
 
-def date_to_seconds(date_string):
-    if len(date_string.split('.')[-1]) == 2:
-        new_date = date_string.split('.')
-        new_date[-1] = '20' + new_date[-1]
-        date_string = '.'.join(new_date)
-    struct_date = time.strptime(date_string, "%d.%m.%Y")
-    return time.mktime(struct_date)
-
-
 def get_draws_from_specification(
         spec_path: str, *,
         only_document_list=False,

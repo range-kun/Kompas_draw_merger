@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from enum import Enum
 import itertools
 import json
 import os
@@ -10,6 +9,7 @@ import re
 import shutil
 import sys
 import time
+from enum import Enum
 from operator import itemgetter
 from tkinter import filedialog
 from typing import Optional
@@ -23,9 +23,11 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from win32com.client import Dispatch
 
 import kompas_api
-from kompas_api import StampCell, get_kompas_file_data
+import utils
 from Widgets_class import MakeWidgets, MainListWidget
-from pop_up_windows import SettingsWindow, RadioButtonsWindow, FILE_NOT_EXISTS_MESSAGE
+from kompas_api import StampCell, get_kompas_file_data
+from pop_up_windows import SettingsWindow, RadioButtonsWindow, FILE_NOT_EXISTS_MESSAGE, SaveType, Filters
+
 
 
 class ErrorType(Enum):
@@ -40,24 +42,33 @@ def except_hook(cls, exception, traceback):
 class UiMerger(MakeWidgets):
     def __init__(self):
         MakeWidgets.__init__(self, parent=None)
-        self.kompas_ext = ['.cdw', '.spw']
         self.setFixedSize(929, 646)
+        self.setWindowTitle("Конвертер")
+
         self.setup_ui()
+
+        self.settings_window = SettingsWindow()
+        self.settings_window_data = self.settings_window.collect_settings_window_info()
+
+
+        self.kompas_ext = ['.cdw', '.spw']
         self.search_path = None
         self.current_progress = 0
         self.progress_step = 0
-        self.settings_window = SettingsWindow()
-        self.filter_thread = None
         self.data_queue = None
         self.missing_list = []
         self.draw_list = []
         self.appl = None
+
         self.bypassing_folders_inside_checkbox_status = 'Yes'
         self.bypassing_folders_inside_checkbox_current_status = 'Yes'
         self.bypassing_sub_assemblies_chekbox_status = 'No'
         self.bypassing_sub_assemblies_chekbox_current_status = 'No'
+
         self.thread = None
+        self.filter_thread = None
         self.data_base_thread = None
+
         self.data_base_files = None
         self.specification_path = None
         self.previous_filters = {}
@@ -67,7 +78,6 @@ class UiMerger(MakeWidgets):
     def setup_ui(self):
         self.setObjectName("Merger")
         font = QtGui.QFont()
-        self.setWindowTitle("Настройки")
 
         sizepolicy = \
             QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Ignored)
@@ -305,19 +315,23 @@ class UiMerger(MakeWidgets):
 
     def choose_initial_folder(self):
         directory_path = filedialog.askdirectory(title="Укажите папку для поиска")
-        if directory_path:
-            draw_list = self.check_search_path(directory_path)
-            if not draw_list:
-                return
-            self.source_of_draws_field.setText(self.search_path)
-            if self.serch_in_folder_radio_button.isChecked():
-                self.calculate_step(len(draw_list), filter_only=True)
-                if self.progress_step:
-                    self.apply_filters(draw_list)
-                else:
-                    self.list_widget.fill_list(draw_list=draw_list)
+        if not directory_path:
+            return
+
+        draw_list = self.check_search_path(directory_path)
+        if not draw_list:
+            self.send_error(f"В указанной папке отсутсвуют чертежи формата .cdw, .spw")
+            return
+
+        self.source_of_draws_field.setText(self.search_path)
+        if self.serch_in_folder_radio_button.isChecked():
+            self.calculate_step(len(draw_list), filter_only=True)
+            if self.progress_step:
+                self.apply_filters(draw_list)
             else:
-                self.get_data_base(draw_list)
+                self.list_widget.fill_list(draw_list=draw_list)
+        else:
+            self.get_data_base(draw_list)
 
     def check_search_path(self, search_path):
         if os.path.isfile(search_path):
@@ -368,6 +382,7 @@ class UiMerger(MakeWidgets):
                 if not radio_window.radio_state:
                     self.send_error('Исполнение не выбрано')
                     return
+
                 column_numbers = response[radio_window.radio_state]
                 if column_numbers == kompas_api.WITHOUT_EXECUTION:
                     column_numbers = list(response.values())[:-1]
@@ -501,23 +516,24 @@ class UiMerger(MakeWidgets):
             return
 
     def refresh_draws_in_list(self, refresh=False):
+        search_path = self.source_of_draws_field.toPlainText()
         if self.serch_in_folder_radio_button.isChecked():
-            search_path = self.source_of_draws_field.toPlainText()
             if not search_path:
                 self.send_error('Укажите папку с чертежамиили')
                 return
+
             draw_list = self.check_search_path(search_path)
             if not draw_list:
                 return
+
             self.list_widget.clear()
             self.calculate_step(len(draw_list), filter_only=True)
             if self.progress_step:
-                self.apply_filters(draw_list)
+                self.start_filter_thread(draw_list)
             else:
                 self.send_error('Обновление завершено')
                 self.list_widget.fill_list(draw_list=draw_list)
         else:
-            search_path = self.source_of_draws_field.toPlainText()
             specification = self.path_to_spec_field.toPlainText()
             if not search_path:
                 self.send_error('Укажите папку с чертежамиили файл .json')
@@ -538,13 +554,19 @@ class UiMerger(MakeWidgets):
         # If merger button is clicked then script checks if files been already filtered,
         # and filter settings didn't change
         # If nothing changed script skips this step
+        if self.is_filters_required():
+            self.start_filter_thread(draw_list, filter_only)
+
+    def is_filters_required(self) -> bool:
+        filters = self.settings_window_data.filters
+        if filters is None:
+            return False
+        return filters != self.previous_filters or self.search_path != self.source_of_draws_field.toPlainText()
+
+    def start_filter_thread(self, draw_list=None, filter_only=True):
         draw_list = draw_list or self.list_widget.get_items_text_data()
-        filters = self.get_all_filters()
-        if not filter_only:
-            if filters == self.previous_filters and self.search_path == self.source_of_draws_field.toPlainText():
-                return 1
-        self.previous_filters = filters
-        self.filter_thread = FilterThread(draw_list, filters, filter_only)
+        self.previous_filters = self.settings_window_data.filters
+        self.filter_thread = FilterThread(draw_list, self.settings_window_data.filters, filter_only)
         self.filter_thread.status.connect(self.status_bar.showMessage)
         self.filter_thread.increase_step.connect(self.increase_step)
         self.filter_thread.finished.connect(self.handle_filter_results)
@@ -560,13 +582,15 @@ class UiMerger(MakeWidgets):
             self.list_widget.clear()
             self.switch_button_group(True)
             return
+
+        self.list_widget.clear()
+        self.list_widget.fill_list(draw_list=draw_list)
         if errors_list:
             self.missing_list = errors_list
             self.print_out_errors(ErrorType.FILE_NOT_OPENED)
         if filter_only:
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
-            self.list_widget.fill_list(draw_list=draw_list)
             self.switch_button_group(True)
             return
         else:
@@ -656,7 +680,7 @@ class UiMerger(MakeWidgets):
     def get_all_files_in_folder(self, search_path=None):
         search_path = search_path or self.search_path
         draw_list = []
-        except_folders_list = self.settings_window.exclude_folder_list_widget.get_items_text_data()
+        except_folders_list = self.settings_window_data.except_folders_list
 
         self.list_widget.clear()
         self.bypassing_folders_inside_checkbox_status = 'Yes' \
@@ -689,6 +713,7 @@ class UiMerger(MakeWidgets):
         if self.serch_in_folder_radio_button.isChecked() and os.path.isfile(self.source_of_draws_field.toPlainText()):
             self.send_error('Укажите папку для сливания')
             return
+
         elif self.search_by_spec_radio_button.isChecked() \
                 and (self.search_path != self.source_of_draws_field.toPlainText()
                      or self.specification_path != self.path_to_spec_field.toPlainText()
@@ -730,8 +755,9 @@ class UiMerger(MakeWidgets):
             return
         self.calculate_step(len(draws_list))
         self.switch_button_group(False)
-        reply = self.apply_filters(draws_list, filter_only=False)
-        if reply:
+        if self.is_filters_required():
+            self.start_filter_thread(draws_list, filter_only=False)  # at the end this method call this function again
+        else:
             self.start_merge_process(draws_list)
 
     def start_merge_process(self, draws_list):
@@ -788,6 +814,7 @@ class UiMerger(MakeWidgets):
 
     def show_settings(self):
         self.settings_window.exec_()
+        self.settings_window_data = self.settings_window.collect_settings_window_info()
 
     def choose_search_way(self):
         self.choose_data_base_button.setEnabled(self.search_by_spec_radio_button.isChecked())
@@ -809,11 +836,11 @@ class UiMerger(MakeWidgets):
         self.current_progress = 0
         self.progress_step = 0
         number_of_operations = 0
-        filters = self.get_all_filters()
+
         if get_data_base:
             number_of_operations = 1
-        if filters:
-            if not filters == self.previous_filters or filter_only:
+        if self.settings_window_data.filters:
+            if filter_only or self.is_filters_required():
                 number_of_operations = 1
         if not filter_only and not get_data_base:
             number_of_operations += 2  # convert files and merger them
@@ -845,47 +872,6 @@ class UiMerger(MakeWidgets):
             self.data_queue.put('Not_chosen')
         else:
             self.data_queue.put(dict_for_pdf)
-
-    def get_all_filters(self):
-        filters = {}
-        if self.settings_window.filter_by_date_check_box.isChecked():
-            date_1 = self.settings_window.first_date_input.dateTime().toSecsSinceEpoch()
-            date_2 = self.settings_window.last_date_input.dateTime().toSecsSinceEpoch()
-            filters['date_1'] = date_1
-            filters['date_2'] = date_2
-
-        if self.settings_window.filter_by_draw_designer.isChecked():
-            if self.settings_window.constructor_from_combobox_radio_button.isChecked():
-                constructors_list = self.settings_window.constructor_combo_box.collect_checked_items()
-            else:
-                constructors_list = self.settings_window.random_constructor_line_edit.text()
-            if constructors_list:
-                filters['constructors_list'] = constructors_list
-
-        if self.settings_window.select_checker_name_checkbox.isChecked():
-            if self.settings_window.checker_from_combobox_radio_button.isChecked():
-                checkers_list = self.settings_window.checker_combo_box.collect_checked_items()
-            else:
-                checkers_list = [self.settings_window.random_checker_line_input.text()]
-            if checkers_list:
-                filters['checkers_list'] = checkers_list
-
-        if self.settings_window.select_checker_name_checkbox.isChecked():
-            if self.settings_window.checker_from_combobox_radio_button.isChecked():
-                checker_name = self.settings_window.checker_combo_box.collect_checked_items()
-            else:
-                checker_name = [self.settings_window.random_checker_line_input.text()]
-            if checker_name:
-                filters['checkers_name'] = checker_name
-
-        if self.settings_window.select_gauge_checkbox.isChecked():
-            if self.settings_window.gauge_from_combobox_radio_button.isChecked():
-                gauge_list = self.settings_window.gauge_combo_box.collect_checked_items()
-            else:
-                gauge_list = [self.settings_window.random_gauge_line_input.text()]
-            if gauge_list:
-                filters['gauge_list'] = gauge_list
-        return filters
 
     def get_data_base(self, files=None, refresh=False):
         if files:
@@ -948,6 +934,7 @@ class MergeThread(QThread):
         self.search_path = directory
         self.data_queue = data_queue
         self.constructor_class = QtWidgets.QFileDialog()
+        self.settings_window_data = merger.settings_window_data
         QThread.__init__(self)
 
     def run(self):
@@ -964,7 +951,7 @@ class MergeThread(QThread):
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
         os.system(f'explorer "{(os.path.normpath(os.path.dirname(single_draw_dir)))}"')
-        if not merger.settings_window.split_files_by_size_checkbox.isChecked():
+        if not self.settings_window_data.split_file_by_size:
             os.startfile(pdf_file)
         self.status.emit(f'Закрытие Kompas')
         self.progress_bar.emit(int(0))
@@ -972,7 +959,7 @@ class MergeThread(QThread):
         self.status.emit('Слитие успешно завершено')
 
     def create_folders(self):
-        if merger.settings_window.auto_choose_save_folder_radio_button.isChecked():
+        if self.settings_window_data.save_type == SaveType.AUTO_SAVE_FOLDER:
             base_pdf_dir, single_draw_dir, main_name = self.make_paths()
         else:
             self.choose_folder.emit(True)
@@ -992,12 +979,15 @@ class MergeThread(QThread):
         return single_draw_dir, base_pdf_dir, main_name
 
     def make_paths(self, directory_to_save=None):
+        need_to_be_split = self.settings_window_data.split_file_by_size
+
         today_date = time.strftime("%d.%m.%Y")
         if merger.search_by_spec_radio_button.isChecked():
             main_name = os.path.basename(merger.specification_path)[:-4]
         else:
             main_name = os.path.basename(self.search_path)
-        if not merger.settings_window.split_files_by_size_checkbox.isChecked():  # if not required to divide file
+
+        if not need_to_be_split:  # if not required to divide file
             base_pdf_dir = rf'{directory_to_save or self.search_path}\pdf'
             pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, main_name, today_date)
         else:
@@ -1006,10 +996,11 @@ class MergeThread(QThread):
             pdf_file = r'%s\%s.pdf' % (base_pdf_dir, main_name)
 
         single_draw_dir = os.path.splitext(pdf_file)[0] + " Однодетальные"
+
         # next code check if folder or file with same name exists if so:
         # get maximum number of file and folder and incriminate +1 to
         # name of new file and folder
-        if merger.settings_window.split_files_by_size_checkbox.isChecked():
+        if need_to_be_split:
             check_path = os.path.dirname(base_pdf_dir)
         else:
             check_path = base_pdf_dir
@@ -1020,7 +1011,7 @@ class MergeThread(QThread):
                                default=0)
             if today_update:
                 today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
-                if merger.settings_window.split_files_by_size_checkbox.isChecked():
+                if need_to_be_split:
                     single_draw_dir = r'%s\pdf\%s - %s %s\Однодетальные' % (directory_to_save or self.search_path,
                                                                             main_name, today_update, today_date)
                 else:
@@ -1048,16 +1039,18 @@ class MergeThread(QThread):
         app.HideMessage = const.ksHideMessageNo
 
     def merge_pdf_files(self, directory_with_draws, main_name):
+        watermark_path = self.settings_window_data.watermark_path
+
         files = sorted(os.listdir(directory_with_draws), key=lambda fil: int(fil.split()[0]))
         merger_instance = self.create_merger_instance(directory_with_draws, files)
-        if type(merger_instance) is dict:  # if file gonna be divided
+        if type(merger_instance) is dict:  # if file gonna be splited
             for key, item in merger_instance.items():
                 format_name, merger_writer, _ = item
                 pdf_file = os.path.join(os.path.dirname(directory_with_draws),
                                         f'{format_name}-{main_name}.pdf')
                 with open(pdf_file, 'wb') as pdf:
                     merger_writer.write(pdf)
-                if merger.settings_window.add_water_mark_check_box.isChecked():
+                if watermark_path:
                     self.add_watermark(pdf_file)
             for key, item in merger_instance.items():
                 _, _, files = item
@@ -1070,50 +1063,61 @@ class MergeThread(QThread):
                 merger_instance.write(pdf)
             for file in merger_instance.inputs:
                 file[0].close()
-            if merger.settings_window.add_water_mark_check_box.isChecked():
+            if watermark_path:
                 self.add_watermark(pdf_file)
 
         return pdf_file
 
     def create_merger_instance(self, directory, files):
         #  если нужно разбиваем файлы или сливаем всё в один
-        if merger.settings_window.split_files_by_size_checkbox.isChecked():
-            merger_instance = {595: ["A4", PyPDF2.PdfFileWriter(), []], 841: ["A3", PyPDF2.PdfFileWriter(), []],
-                               1190: ["A2", PyPDF2.PdfFileWriter(), []], 1683: ["A1", PyPDF2.PdfFileWriter(), []]}
+        need_to_split = self.settings_window_data.split_file_by_size
+
+        if need_to_split:
+            merger_instance = {595: ["A4", PyPDF2.PdfFileWriter(), []], 842: ["A3", PyPDF2.PdfFileWriter(), []],
+                               1190: ["A2", PyPDF2.PdfFileWriter(), []], 1683: ["A1", PyPDF2.PdfFileWriter(), []],
+                               'unknow': ['неопеределен', PyPDF2.PdfFileWriter(), []]}
         else:
             merger_instance = PyPDF2.PdfFileMerger()
+
         for filename in files:
             file = open(os.path.join(directory, filename), 'rb')
             merger_pdf_reader = PyPDF2.PdfFileReader(file)
+
             if type(merger_instance) == dict:
                 for page in merger_pdf_reader.pages:
                     size = int(sorted(page.mediaBox[2:])[0])
-                    merger_instance[size][1].addPage(page)
-                    merger_instance[size][2].append(file)
+                    try:
+                        format_size, py_pdf_instance, list_of_files = merger_instance[size]
+                    except KeyError:
+                        format_size, py_pdf_instance, list_of_files = merger_instance['unknow']
+
+                    py_pdf_instance.addPage(page)
+                    list_of_files.append(file)
             else:
                 merger_instance.append(fileobj=file)
             self.increase_step.emit(True)
             self.status.emit(f'Сливание {filename}')
-        if merger.settings_window.split_files_by_size_checkbox.isChecked():
+        if need_to_split:
             merger_instance = {key: value for key, value in merger_instance.items() if
                                value[1].getNumPages()}
         return merger_instance
 
     def add_watermark(self, pdf_file):
-        image = merger.settings_window.custom_watermark_path_edit_line.text()
-        position = merger.settings_window.watermark_position
-        if not image or not position:
+        watermark_path = self.settings_window_data.watermark_path
+        watermark_position = self.settings_window_data.watermark_position
+
+        if not watermark_path or not watermark_position:
             return
-        if not os.path.exists(image) or image == FILE_NOT_EXISTS_MESSAGE:
+        if not os.path.exists(watermark_path) or watermark_path == FILE_NOT_EXISTS_MESSAGE:
             self.send_errors.emit(f'Путь к файлу с картинкой не существует')
             return
         pdf_doc = fitz.open(pdf_file)  # open the PDF
-        rect = fitz.Rect(position)  # where to put image: use upper left corner
+        rect = fitz.Rect(watermark_position)  # where to put image: use upper left corner
         for page in pdf_doc:
             if not page.is_wrapped:
                 page.wrap_contents()
             try:
-                page.insert_image(rect, filename=image, overlay=False)
+                page.insert_image(rect, filename=watermark_path, overlay=False)
             except ValueError:
                 self.send_errors.emit(
                     'Заданы неверные координаты, размещения картинки, водяной знак не был добавлен'
@@ -1127,7 +1131,7 @@ class FilterThread(QThread):
     increase_step = pyqtSignal(bool)
     status = pyqtSignal(str)
 
-    def __init__(self, draw_paths_list, filters, filter_only=True):
+    def __init__(self, draw_paths_list, filters: Filters, filter_only=True):
         self.draw_paths_list = draw_paths_list
         self.filters = filters
         self.appl = None
@@ -1136,20 +1140,12 @@ class FilterThread(QThread):
         QThread.__init__(self)
 
     def run(self):
-        filtered_paths_draw_list = self.filter_draws(**self.filters)
+        filtered_paths_draw_list = self.filter_draws()
         self.status.emit(f'Закрытие Kompas')
         kompas_api.exit_kompas(self.appl)
         self.finished.emit(filtered_paths_draw_list, self.errors_list, self.filter_only)
 
-    def filter_draws(
-            self,
-            *,
-            date_1=None,
-            date_2=None,
-            constructors_list: list[str]=None,
-            checker_list: list[str]=None,
-            gauge_list: list[str]=None
-    ) -> list[str]:
+    def filter_draws(self) -> list[str]:
         self.status.emit("Открытие Kompas")
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         self.appl = application
@@ -1169,14 +1165,14 @@ class FilterThread(QThread):
                 doc, doc2d = kompas_data
                 draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
 
-                if date_1:
-                    if not self.filter_by_date_cell(date_1, date_2, draw_stamp):
+                if self.filters.date_range:
+                    if not self.filter_by_date_cell(draw_stamp):
                         continue
                 file_is_ok = True
                 for data_list, stamp_cell in [
-                    (constructors_list, StampCell.CONSTRUCTOR_NAME_CELL),
-                    (checker_list, StampCell.CHECKER_NAME_CELL),
-                    (gauge_list, StampCell.GAUGE_CELL)
+                    (self.filters.constructor_list, StampCell.CONSTRUCTOR_NAME_CELL),
+                    (self.filters.checker_list, StampCell.CHECKER_NAME_CELL),
+                    (self.filters.sortament_list, StampCell.GAUGE_CELL)
                 ]:
                     if data_list:
                         if not self.filter_file_by_cell_value(data_list, stamp_cell, draw_stamp):
@@ -1186,18 +1182,18 @@ class FilterThread(QThread):
                 draw_list.append(file_path)
         return draw_list
 
-    @staticmethod
-    def filter_by_date_cell(date_1, date_2, draw_stamp):
+    def filter_by_date_cell(self, draw_stamp):
+        date_1, date_2 = self.filters.date_range
         date_in_stamp = draw_stamp.Text(StampCell.CONSTRUCTOR_DATE_CELL).Str
+
         if date_in_stamp:
             try:
-                date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
+                date_in_stamp = utils.date_to_seconds(date_in_stamp)
             except:
                 return False
-
-            date_1_in_seconds, date_2_in_seconds = sorted([date_1, date_2])
-            if not date_1_in_seconds <= date_in_stamp <= date_2_in_seconds:
+            if not date_1 <= date_in_stamp <= date_2:
                 return False
+            return True
 
     @staticmethod
     def filter_file_by_cell_value(filter_data_list: list[str], stamp_cell_number: StampCell, draw_stamp):
@@ -1310,7 +1306,7 @@ class DataBaseThread(QThread):
                 draw_stamp = doc2d.LayoutSheets.Item(0).Stamp  # массив листов документа
                 date_in_stamp = draw_stamp.Text(StampCell.CONSTRUCTOR_DATE_CELL).Str
                 try:
-                    date_in_stamp = kompas_api.date_to_seconds(date_in_stamp)
+                    date_in_stamp = utils.date_to_seconds(date_in_stamp)
                 except:
                     date_in_stamp = 0
                 if date_in_stamp >= max_date_in_stamp:
