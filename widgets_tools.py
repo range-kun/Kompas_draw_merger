@@ -1,14 +1,45 @@
 import os
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import QSizePolicy
 
 
-class MakeWidgets(QtWidgets.QMainWindow):
+class WidgetStyles:
+    def __init__(self):
+        # size policy section
+        self.line_edit_size_policy = \
+            QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Ignored)
+        self.size_policy_button = \
+            QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Ignored)
+        self.size_policy_button_2 = \
+            QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.date_policy = \
+            QSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
+        self.filter_policy = \
+           QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+
+        # font section
+        self.default_font = QtGui.QFont()
+
+        self.arial_11_font = QtGui.QFont()
+        self.arial_11_font.setPointSize(11)
+        self.arial_11_font.setFamily("Arial")
+
+        self.arial_12_font = QtGui.QFont()
+        self.arial_12_font.setFamily("Arial")
+        self.arial_12_font.setPointSize(12)
+
+        self.ms_shell_12_font = QtGui.QFont()
+        self.ms_shell_12_font.setFamily("MS Shell Dlg 2")
+        self.ms_shell_12_font.setPointSize(12)
+
+
+class WidgetBuilder(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
 
     def make_button(self, *, text, command=None, size=None, font=None, size_policy=None, parent=None, enabled=True):
-        button = QtWidgets.QPushButton(parent or self.centralwidget)
+        button = QtWidgets.QPushButton(parent or self.central_widget)
         button.setEnabled(enabled)
         if size:
             button.setMaximumSize(QtCore.QSize(*size))
@@ -48,7 +79,7 @@ class MakeWidgets(QtWidgets.QMainWindow):
             size_policy=None,
             font=None
     ):
-        text_edit = QtWidgets.QTextEdit(parent or self.centralwidget)
+        text_edit = QtWidgets.QTextEdit(parent or self.central_widget)
         text_edit.setStatusTip(status)
         text_edit.setPlainText(text)
         text_edit.setFont(font)
@@ -141,7 +172,7 @@ class MakeWidgets(QtWidgets.QMainWindow):
         if parent:
             widget = QtWidgets.QCheckBox(parent)
         else:
-            widget = QtWidgets.QCheckBox(self.gridLayoutWidget)
+            widget = QtWidgets.QCheckBox(self.grid_widget)
         if activate:
             widget.setChecked(True)
         if font:
@@ -152,7 +183,7 @@ class MakeWidgets(QtWidgets.QMainWindow):
         return widget
 
     def make_radio_button(self, *, text, command=None, parent=None, font=None):
-        radio_button = QtWidgets.QRadioButton(text, parent or self.centralwidget)
+        radio_button = QtWidgets.QRadioButton(text, parent or self.central_widget)
         if font:
             radio_button.setFont(font)
         if command:
