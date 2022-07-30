@@ -5,7 +5,6 @@ from collections import namedtuple
 from typing import NewType
 import json
 import os
-from datetime import date
 
 from pydantic import BaseModel
 from PyQt5 import QtCore, QtGui, QtWidgets

@@ -29,7 +29,6 @@ from kompas_api import StampCell, get_kompas_file_data
 from pop_up_windows import SettingsWindow, RadioButtonsWindow, FILE_NOT_EXISTS_MESSAGE, SaveType, Filters
 
 
-
 class ErrorType(Enum):
     FILE_MISSING = 1
     FILE_NOT_OPENED = 2
@@ -49,7 +48,6 @@ class UiMerger(MakeWidgets):
 
         self.settings_window = SettingsWindow()
         self.settings_window_data = self.settings_window.collect_settings_window_info()
-
 
         self.kompas_ext = ['.cdw', '.spw']
         self.search_path = None
@@ -174,7 +172,6 @@ class UiMerger(MakeWidgets):
             command=self.choose_initial_folder
         )
         self.gridLayout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
-
 
         self.additional_settings_button = self.make_button(
             text="Дополнительные настройки",
@@ -607,7 +604,7 @@ class UiMerger(MakeWidgets):
             self,
             'База данных',
             "Сохранить полученные данные?",
-             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
         if choice == QtWidgets.QMessageBox.Yes:
             self.apply_data_base_save()
@@ -787,8 +784,9 @@ class UiMerger(MakeWidgets):
         if self.serch_in_folder_radio_button.isChecked():
             self.source_of_draws_field.setPlaceholderText("Выберите папку с файлами в формате .cdw или .spw")
         else:
-            self.source_of_draws_field.setPlaceholderText("Выберите папку с файлами в формате "
-                                              ".cdw или .spw \n или файл с базой данных в формате .json")
+            self.source_of_draws_field.setPlaceholderText(
+                "Выберите папку с файлами в формате .cdw или .spw \n или файл с базой данных в формате .json"
+            )
         self.path_to_spec_field.clear()
         self.path_to_spec_field.setPlaceholderText('Укажите путь до файла со спецификацией')
         self.list_widget.clear()

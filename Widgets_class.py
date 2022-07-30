@@ -5,7 +5,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 class MakeWidgets(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
-        QtWidgets.QMainWindow.__init__(self, parent=None)
+        QtWidgets.QMainWindow.__init__(self, parent)
 
     def make_button(self, *, text, command=None, size=None, font=None, size_policy=None, parent=None, enabled=True):
         button = QtWidgets.QPushButton(parent or self.centralwidget)
