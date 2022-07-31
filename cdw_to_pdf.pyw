@@ -359,20 +359,22 @@ class UiMerger(WidgetBuilder):
             title="Выбор cпецификации",
             filetypes=(("spec", "*.spw"),)
         )
-        if file_path:
-            response = self.check_specification(file_path, True)
-            if not response:
-                return
-            elif type(response) == str:
-                self.send_error(response)
-                return
-            self.path_to_spec_field.setText(file_path)
-            cdw_file = self.source_of_draws_field.toPlainText()
-            if cdw_file:
-                if cdw_file == self.search_path and self.data_base_files:
-                    self.get_paths_to_specifications()
-                else:
-                    self.get_data_base()
+        if not file_path:
+            return
+
+        response = self.check_specification(file_path, True)
+        if not response:
+            return
+        elif type(response) == str:
+            self.send_error(response)
+            return
+        self.path_to_spec_field.setText(file_path)
+        cdw_file = self.source_of_draws_field.toPlainText()
+        if cdw_file:
+            if cdw_file == self.search_path and self.data_base_files:
+                self.get_paths_to_specifications()
+            else:
+                self.get_data_base()
 
     def check_specification(self, file_path: str, by_button_click: bool = False):
         if file_path.endswith('.spw') and os.path.isfile(file_path):
@@ -775,7 +777,6 @@ class UiMerger(WidgetBuilder):
         self.thread.increase_step.connect(self.increase_step)
         self.thread.kill_thread.connect(self.stop_merge_thread)
         self.thread.errors.connect(self.send_error)
-        self.thread.choose_folder.connect(self.choose_folder)
         self.thread.status.connect(self.status_bar.showMessage)
         self.thread.progress_bar.connect(self.progress_bar.setValue)
         self.appl = None
@@ -869,17 +870,6 @@ class UiMerger(WidgetBuilder):
         self.choose_data_base_button.setEnabled(switch)
         self.choose_specification_button.setEnabled(switch)
 
-    def choose_folder(self, signal):
-        # signal отправляется из треда MergeThread
-        dict_for_pdf = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Выбрать папку", ".",
-            QtWidgets.QFileDialog.ShowDirsOnly
-        )
-        if not dict_for_pdf:
-            self.data_queue.put('Not_chosen')
-        else:
-            self.data_queue.put(dict_for_pdf)
-
     def get_data_base(self, files=None, refresh=False):
         if files:
             self.get_data_base_from_folder(files)
@@ -931,7 +921,6 @@ class MergeThread(QThread):
     buttons_enable = pyqtSignal(bool)
     errors = pyqtSignal(str)
     status = pyqtSignal(str)
-    choose_folder = pyqtSignal(bool)
     kill_thread = pyqtSignal()
     increase_step = pyqtSignal(bool)
     progress_bar = pyqtSignal(int)
@@ -945,12 +934,15 @@ class MergeThread(QThread):
         QThread.__init__(self)
 
     def run(self):
-        single_draw_dir, base_pdf_dir, main_name = self.create_folders()
+        directory_to_save = self.select_save_folder()
+        if not directory_to_save:
+            self._kill_thread()
+        base_pdf_dir, single_draw_dir, main_name = self.make_paths(directory_to_save)
         if not single_draw_dir and not base_pdf_dir:
-            self.errors.emit('Запись прервана, папка не была найдена')
-            self.buttons_enable.emit(True)
-            self.progress_bar.emit(0)
-            self.kill_thread.emit()
+            self._kill_thread()
+            return
+
+        os.makedirs(single_draw_dir)
         self.cdw_to_pdf(self.files, single_draw_dir)
         pdf_file = self.merge_pdf_files(single_draw_dir, main_name)
         if merger.delete_single_draws_after_merge_checkbox.isChecked():
@@ -965,42 +957,27 @@ class MergeThread(QThread):
         kompas_api.exit_kompas(self.appl)
         self.status.emit('Слитие успешно завершено')
 
-    def create_folders(self):
-        if self.settings_window_data.save_type == SaveType.AUTO_SAVE_FOLDER:
-            base_pdf_dir, single_draw_dir, main_name = self.make_paths()
-        else:
-            self.choose_folder.emit(True)
-            while True:
-                time.sleep(0.1)
-                try:
-                    directory_to_save = self.data_queue.get(block=False)
-                except queue.Empty:
-                    pass
-                else:
-                    break
-            if directory_to_save != 'Not_chosen':
-                base_pdf_dir, single_draw_dir, main_name = self.make_paths(directory_to_save)
-            else:
-                return None, None, None
-        os.makedirs(single_draw_dir)
-        return single_draw_dir, base_pdf_dir, main_name
+
+    def select_save_folder(self):
+        directory_to_save = None
+        if self.settings_window_data.save_type == SaveType.MANUALLY_SAVE_FOLDER:
+            directory_to_save = filedialog.askdirectory(title="Выбрать папку")
+            if not directory_to_save:
+                return
+        return directory_to_save
 
     def make_paths(self, directory_to_save=None):
-        need_to_be_split = self.settings_window_data.split_file_by_size
-
+        pdf_file_name = self.fetch_pdf_file_name()
         today_date = time.strftime("%d.%m.%Y")
-        if merger.search_by_spec_radio_button.isChecked():
-            main_name = os.path.basename(merger.specification_path)[:-4]
-        else:
-            main_name = os.path.basename(self.search_path)
 
-        if not need_to_be_split:  # if not required to divide file
+        need_to_be_split = self.settings_window_data.split_file_by_size
+        if not need_to_be_split:
             base_pdf_dir = rf'{directory_to_save or self.search_path}\pdf'
-            pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, main_name, today_date)
+            pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, pdf_file_name, today_date)
         else:
             base_pdf_dir = r'%s\pdf\%s - 01 %s' % (directory_to_save or self.search_path,
-                                                   main_name, today_date)
-            pdf_file = r'%s\%s.pdf' % (base_pdf_dir, main_name)
+                                                   pdf_file_name, today_date)
+            pdf_file = r'%s\%s.pdf' % (base_pdf_dir, pdf_file_name)
 
         single_draw_dir = os.path.splitext(pdf_file)[0] + " Однодетальные"
 
@@ -1012,19 +989,26 @@ class MergeThread(QThread):
         else:
             check_path = base_pdf_dir
 
-        if os.path.exists(check_path) and main_name in ' '.join(os.listdir(check_path)):
+        if os.path.exists(check_path) and pdf_file_name in ' '.join(os.listdir(check_path)):
             string_of_files = ' '.join(os.listdir(check_path))
-            today_update = max(map(int, re.findall(rf'{main_name} - (\d\d)(?= {today_date})', string_of_files)),
+            today_update = max(map(int, re.findall(rf'{pdf_file_name} - (\d\d)(?= {today_date})', string_of_files)),
                                default=0)
             if today_update:
                 today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
                 if need_to_be_split:
                     single_draw_dir = r'%s\pdf\%s - %s %s\Однодетальные' % (directory_to_save or self.search_path,
-                                                                            main_name, today_update, today_date)
+                                                                            pdf_file_name, today_update, today_date)
                 else:
                     single_draw_dir = r'%s\pdf\%s - %s %s Однодетальные' % (directory_to_save or self.search_path,
-                                                                            main_name, today_update, today_date)
-        return base_pdf_dir, single_draw_dir, main_name
+                                                                            pdf_file_name, today_update, today_date)
+        return base_pdf_dir, single_draw_dir, pdf_file_name
+
+    def fetch_pdf_file_name(self) -> str:
+        if merger.search_by_spec_radio_button.isChecked():
+            main_name = os.path.basename(merger.specification_path)[:-4]
+        else:
+            main_name = os.path.basename(self.search_path)
+        return main_name
 
     def cdw_to_pdf(self, files, single_draw_dir):
         self.status.emit('Открытие Kompas')

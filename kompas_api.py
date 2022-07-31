@@ -95,7 +95,6 @@ def get_draws_from_specification(
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     app.HideMessage = const.ksHideMessageYes
-    file_name = os.path.basename(spec_path).split()[0]
 
     response = create_spc_object(spec_path, app, kompas_api7_module, const)
     if type(response) == str:
