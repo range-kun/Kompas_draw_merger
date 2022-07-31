@@ -48,9 +48,6 @@ class UiMerger(WidgetBuilder):
         self.settings_window_data = self.settings_window.collect_settings_window_info()
         self.style_class = WidgetStyles()
 
-        self.arial_12_font = self.style_class.arial_12_font
-        self.arial_11_font = self.style_class.arial_11_font
-
         self.setup_ui()
 
         self.kompas_ext = ['.cdw', '.spw']
@@ -70,109 +67,56 @@ class UiMerger(WidgetBuilder):
         self.thread = None
         self.filter_thread = None
         self.data_base_thread = None
+        self.recursive_thread = None
 
         self.data_base_files = None
         self.specification_path = None
         self.previous_filters = {}
         self.draws_in_specification = {}
-        self.recursive_thread = None
 
     def setup_ui(self):
+        self.setup_styles()
         self.setFont(self.arial_12_font)
+        self.grid_widget.setGeometry(QtCore.QRect(10, 10, 906, 611))
 
-        line_edit_size_policy = self.style_class.line_edit_size_policy
-        sizepolicy_button = self.style_class.size_policy_button
-        sizepolicy_button_2 = self.style_class.size_policy_button_2
+        self.setup_look_up_section()
+        self.setup_spec_section()
+        self.setup_look_up_parameters_section()
+        self.setup_upper_list_buttons()
+        self.setup_list_widget_section()
+        self.setup_lower_list_buttons()
+        self.setup_bottom_section()
 
+    def setup_styles(self):
         self.central_widget = QtWidgets.QWidget(self)
         self.grid_widget = QtWidgets.QWidget(self.central_widget)
         self.setCentralWidget(self.central_widget)
 
-        self.grid_widget.setGeometry(QtCore.QRect(10, 10, 906, 611))
+        self.grid_layout = QtWidgets.QGridLayout(self.grid_widget)
+        self.grid_layout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.gridLayout = QtWidgets.QGridLayout(self.grid_widget)
-        self.gridLayout.setSizeConstraint(QtWidgets.QLayout.SetDefaultConstraint)
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
+        self.arial_12_font = self.style_class.arial_12_font
+        self.arial_11_font = self.style_class.arial_11_font
 
-        self.setup_upper_list_buttons(self.arial_12_font)
+        self.line_edit_size_policy = self.style_class.line_edit_size_policy
+        self.sizepolicy_button = self.style_class.size_policy_button
+        self.sizepolicy_button_2 = self.style_class.size_policy_button_2
 
-        self.horizontalLayout = QtWidgets.QHBoxLayout()
-        self.gridLayout.addLayout(self.horizontalLayout, 8, 0, 1, 4)
-
-        self.list_widget = MainListWidget(self.grid_widget)
-        self.horizontalLayout.addWidget(self.list_widget)
-
-        self.verticalLayout = QtWidgets.QVBoxLayout()
-        self.horizontalLayout.addLayout(self.verticalLayout)
-
-        self.move_line_up_button = self.make_button(
-            text='\n\n',
-            size_policy=sizepolicy_button_2,
-            command=self.list_widget.move_item_up
+    def setup_look_up_section(self):
+        self.source_of_draws_field = self.make_text_edit(
+            font=self.arial_11_font,
+            placeholder="Выберите папку с файлами в формате .spw или .cdw",
+            size_policy=self.line_edit_size_policy
         )
-        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
-        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
-
-        self.move_line_down_button = self.make_button(
-            text='\n\n',
-            size_policy=sizepolicy_button_2,
-            command=self.list_widget.move_item_down
-        )
-        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
-        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
-
-        self.verticalLayout.addWidget(self.move_line_up_button)
-        self.verticalLayout.addWidget(self.move_line_down_button)
-
-        self.select_all_button = self.make_button(
-            text='Выделить все',
-            font=self.arial_12_font,
-            command=self.list_widget.select_all,
-            size_policy=sizepolicy_button
-        )
-        self.gridLayout.addWidget(self.select_all_button, 10, 0, 1, 1)
-
-        self.remove_selection_button = self.make_button(
-            text="Снять выделение",
-            font=self.arial_12_font, command=self.list_widget.unselect_all,
-            size_policy=sizepolicy_button
-        )
-        self.gridLayout.addWidget(self.remove_selection_button, 10, 1, 1, 1)
-
-        self.add_file_to_list_button = self.make_button(
-            text="Добавить файл в список",
-            font=self.arial_12_font,
-            command=self.add_file_to_list
-        )
-        self.gridLayout.addWidget(self.add_file_to_list_button, 10, 2, 1, 1)
-
-        self.add_folder_to_list_button = self.make_button(
-            text="Добавить папку в список",
-            font=self.arial_12_font,
-            command=self.add_folder_to_list
-        )
-        self.gridLayout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
-
-        self.merge_files_button = self.make_button(
-            text="Склеить файлы",
-            font=self.arial_12_font,
-            command=self.merge_files
-        )
-        self.gridLayout.addWidget(self.merge_files_button, 13, 0, 1, 4)
+        self.grid_layout.addWidget(self.source_of_draws_field, 1, 0, 1, 2)
 
         self.choose_folder_button = self.make_button(
             text="Выбор папки \n с чертежами для поиска",
             font=self.arial_12_font,
             command=self.choose_initial_folder
         )
-        self.gridLayout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
-
-        self.additional_settings_button = self.make_button(
-            text="Дополнительные настройки",
-            font=self.arial_12_font,
-            command=self.show_settings
-        )
-        self.gridLayout.addWidget(self.additional_settings_button, 11, 0, 1, 2)
+        self.grid_layout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
 
         self.choose_data_base_button = self.make_button(
             text='Выбор файла\n с базой чертежей',
@@ -180,60 +124,33 @@ class UiMerger(WidgetBuilder):
             enabled=False,
             command=self.get_data_base_path
          )
-        self.gridLayout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
+        self.grid_layout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
+    def setup_spec_section(self):
         self.choose_specification_button = self.make_button(
             text='Выбор \nспецификации',
             font=self.arial_12_font,
             enabled=False,
             command=self.choose_specification
         )
-        self.gridLayout.addWidget(self.choose_specification_button, 2, 2, 1, 1)
+        self.grid_layout.addWidget(self.choose_specification_button, 2, 2, 1, 1)
 
         self.save_data_base_file_button = self.make_button(
             text='Сохранить \n базу чертежей',
             font=self.arial_12_font, enabled=False,
             command=self.apply_data_base_save
         )
-        self.gridLayout.addWidget(self.save_data_base_file_button, 2, 3, 1, 1)
-
-        self.delete_single_draws_after_merge_checkbox = self.make_checkbox(
-            font=self.arial_12_font,
-            text='Удалить однодетальные pdf-чертежи по окончанию',
-            activate=True
-        )
-        self.gridLayout.addWidget(self.delete_single_draws_after_merge_checkbox, 11, 2, 1, 2)
-
-        self.bypassing_folders_inside_checkbox = self.make_checkbox(
-            font=self.arial_12_font,
-            text='С обходом всех папок внутри',
-            activate=True,
-            command=self.change_bypassing_folders_inside_checkbox_status
-        )
-        self.gridLayout.addWidget(self.bypassing_folders_inside_checkbox, 3, 3, 1, 1)
-
-        self.bypassing_sub_assemblies_chekbox = self.make_checkbox(
-            font=self.arial_12_font,
-            text='С поиском по подсборкам',
-            command=self.change_bypassing_sub_assemblies_chekbox_status
-        )
-        self.bypassing_sub_assemblies_chekbox.setEnabled(False)
-        self.gridLayout.addWidget(self.bypassing_sub_assemblies_chekbox, 3, 1, 1, 1)
-
-        self.source_of_draws_field = self.make_text_edit(
-            font=self.arial_11_font,
-            placeholder="Выберите папку с файлами в формате .spw или .cdw",
-            size_policy=line_edit_size_policy
-        )
-        self.gridLayout.addWidget(self.source_of_draws_field, 1, 0, 1, 2)
+        self.grid_layout.addWidget(self.save_data_base_file_button, 2, 3, 1, 1)
 
         self.path_to_spec_field = self.make_text_edit(
             font=self.arial_11_font,
             placeholder="Укажите путь до файла со спецификацией .sdw",
-            size_policy=line_edit_size_policy
+            size_policy=self.line_edit_size_policy
         )
         self.path_to_spec_field.setEnabled(False)
-        self.gridLayout.addWidget(self.path_to_spec_field, 2, 0, 1, 2)
+        self.grid_layout.addWidget(self.path_to_spec_field, 2, 0, 1, 2)
+
+    def setup_look_up_parameters_section(self):
 
         self.serch_in_folder_radio_button = self.make_radio_button(
             text='Поиск по папке',
@@ -241,27 +158,34 @@ class UiMerger(WidgetBuilder):
             command=self.choose_search_way
         )
         self.serch_in_folder_radio_button.setChecked(True)
-        self.gridLayout.addWidget(self.serch_in_folder_radio_button, 3, 2, 1, 1)
+        self.grid_layout.addWidget(self.serch_in_folder_radio_button, 3, 2, 1, 1)
 
         self.search_by_spec_radio_button = self.make_radio_button(
             text='Поиск по спецификации',
             font=self.arial_12_font,
             command=self.choose_search_way
         )
-        self.gridLayout.addWidget(self.search_by_spec_radio_button, 3, 0, 1, 1)
+        self.grid_layout.addWidget(self.search_by_spec_radio_button, 3, 0, 1, 1)
 
-        self.progress_bar = QtWidgets.QProgressBar(self.grid_widget)
-        self.progress_bar.setTextVisible(False)
-        self.gridLayout.addWidget(self.progress_bar, 15, 0, 1, 4)
+        self.bypassing_folders_inside_checkbox = self.make_checkbox(
+            font=self.arial_12_font,
+            text='С обходом всех папок внутри',
+            activate=True,
+            command=self.change_bypassing_folders_inside_checkbox_status
+        )
+        self.grid_layout.addWidget(self.bypassing_folders_inside_checkbox, 3, 3, 1, 1)
 
-        self.status_bar = QtWidgets.QStatusBar(self)
-        self.status_bar.setObjectName("statusbar")
-        self.setStatusBar(self.status_bar)
-        QtCore.QMetaObject.connectSlotsByName(self)
+        self.bypassing_sub_assemblies_chekbox = self.make_checkbox(
+            font=self.arial_12_font,
+            text='С поиском по подсборкам',
+            command=self.change_bypassing_sub_assemblies_chekbox_status
+        )
+        self.bypassing_sub_assemblies_chekbox.setEnabled(False)
+        self.grid_layout.addWidget(self.bypassing_sub_assemblies_chekbox, 3, 1, 1, 1)
 
-    def setup_upper_list_buttons(self, font):
+    def setup_upper_list_buttons(self):
         upper_items_list_layout = QtWidgets.QHBoxLayout()
-        self.gridLayout.addLayout(upper_items_list_layout, 4, 0, 1, 4)
+        self.grid_layout.addLayout(upper_items_list_layout, 4, 0, 1, 4)
 
         clear_draw_list_button = self.make_button(
             text="Очистить спискок и выбор папки для поиска",
@@ -283,6 +207,97 @@ class UiMerger(WidgetBuilder):
             command=self.copy_files_from_items_list
         )
         upper_items_list_layout.addWidget(save_items_list)
+
+    def setup_list_widget_section(self):
+        horizontal_layout = QtWidgets.QHBoxLayout()
+        self.grid_layout.addLayout(horizontal_layout, 8, 0, 1, 4)
+
+        self.list_widget = MainListWidget(self.grid_widget)
+        horizontal_layout.addWidget(self.list_widget)
+
+        vertical_layout = QtWidgets.QVBoxLayout()
+        horizontal_layout.addLayout(vertical_layout)
+
+        self.move_line_up_button = self.make_button(
+            text='\n\n',
+            size_policy=self.sizepolicy_button_2,
+            command=self.list_widget.move_item_up
+        )
+        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
+        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
+
+        self.move_line_down_button = self.make_button(
+            text='\n\n',
+            size_policy=self.sizepolicy_button_2,
+            command=self.list_widget.move_item_down
+        )
+        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
+        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
+
+        vertical_layout.addWidget(self.move_line_up_button)
+        vertical_layout.addWidget(self.move_line_down_button)
+
+    def setup_lower_list_buttons(self):
+        self.select_all_button = self.make_button(
+            text='Выделить все',
+            font=self.arial_12_font,
+            command=self.list_widget.select_all,
+            size_policy=self.sizepolicy_button
+        )
+        self.grid_layout.addWidget(self.select_all_button, 10, 0, 1, 1)
+
+        self.remove_selection_button = self.make_button(
+            text="Снять выделение",
+            font=self.arial_12_font, command=self.list_widget.unselect_all,
+            size_policy=self.sizepolicy_button
+        )
+        self.grid_layout.addWidget(self.remove_selection_button, 10, 1, 1, 1)
+
+        self.add_file_to_list_button = self.make_button(
+            text="Добавить файл в список",
+            font=self.arial_12_font,
+            command=self.add_file_to_list
+        )
+        self.grid_layout.addWidget(self.add_file_to_list_button, 10, 2, 1, 1)
+
+        self.add_folder_to_list_button = self.make_button(
+            text="Добавить папку в список",
+            font=self.arial_12_font,
+            command=self.add_folder_to_list
+        )
+        self.grid_layout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
+
+    def setup_bottom_section(self):
+
+        self.additional_settings_button = self.make_button(
+            text="Дополнительные настройки",
+            font=self.arial_12_font,
+            command=self.show_settings
+        )
+        self.grid_layout.addWidget(self.additional_settings_button, 11, 0, 1, 2)
+
+        self.delete_single_draws_after_merge_checkbox = self.make_checkbox(
+            font=self.arial_12_font,
+            text='Удалить однодетальные pdf-чертежи по окончанию',
+            activate=True
+        )
+        self.grid_layout.addWidget(self.delete_single_draws_after_merge_checkbox, 11, 2, 1, 2)
+
+        self.merge_files_button = self.make_button(
+            text="Склеить файлы",
+            font=self.arial_12_font,
+            command=self.merge_files
+        )
+        self.grid_layout.addWidget(self.merge_files_button, 13, 0, 1, 4)
+
+        self.progress_bar = QtWidgets.QProgressBar(self.grid_widget)
+        self.progress_bar.setTextVisible(False)
+        self.grid_layout.addWidget(self.progress_bar, 15, 0, 1, 4)
+
+        self.status_bar = QtWidgets.QStatusBar(self)
+        self.status_bar.setObjectName("statusbar")
+        self.setStatusBar(self.status_bar)
+        QtCore.QMetaObject.connectSlotsByName(self)
 
     def copy_files_from_items_list(self):
         file_paths = self.list_widget.get_items_text_data()
