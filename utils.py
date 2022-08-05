@@ -1,10 +1,24 @@
+import os
+import re
 import time
 from datetime import datetime
-from tkinter import filedialog
+from collections import  defaultdict
+from pathlib import Path
+from typing import NewType
+
+FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
+
+
+FilePath = NewType('FilePath', str)
+FileName = NewType('FileName', str)
 
 
 def date_today_by_int() -> list[int]:
     return [int(i) for i in str(datetime.date(datetime.now())).split('-')]
+
+
+def get_today_date():
+    return time.strftime("%d.%m.%Y")
 
 
 def date_to_seconds(date_string):
@@ -14,3 +28,96 @@ def date_to_seconds(date_string):
         date_string = '.'.join(new_date)
     struct_date = time.strptime(date_string, "%d.%m.%Y")
     return time.mktime(struct_date)
+
+
+def sort_files_by_name(directory_with_draws):
+    return sorted(os.listdir(directory_with_draws), key=lambda fil: int(fil.split()[0]))
+
+
+class MergerFolderData:
+    def __init__(
+            self,
+            path_to_search: FilePath,
+            need_to_be_split: bool,
+            draw_file_paths: list[FilePath],
+            merger_class,
+            directory_to_save: str | None = None
+    ):
+        self._directory_to_save = directory_to_save
+        self._path_to_search = path_to_search
+        self._draw_file_paths = draw_file_paths
+        self._need_to_be_split = need_to_be_split
+        self._ui_merger = merger_class
+        self._single_draw_dir_name = 'Однодетальные'
+
+        self._today_date = get_today_date()
+        self._core_dir = rf'{directory_to_save or self._path_to_search}\pdf'
+
+        self._main_draw_name = self._fetch_main_draw_name()
+        self.single_draw_dir = self._fetch_single_draw_dir()
+        self.pdf_file_paths = self._create_single_detail_pdf_paths()
+
+    def create_main_pdf_file_path(self, size: list[float] = None) -> FilePath:
+        if size:  # need to split
+            format_name = self._fetch_format(size)
+            return FilePath(os.path.join(
+                os.path.dirname(self.single_draw_dir), f'{format_name}-{self._main_draw_name}.pdf'
+            ))
+        else:
+            pdf_file_name = f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
+            return FilePath(os.path.join(os.path.dirname(self.single_draw_dir), pdf_file_name))
+
+    @staticmethod
+    def _fetch_format(value: list[float]) -> str:
+
+        format_sizes = {(595, 842): "A4", (842, 1190): "A3", (1190, 1684): "A2", (1684, 2384): "A1", (2384, 3370): "A0"}
+        min_file_size, max_file_size = sorted(map(int, value))
+
+        format_name = format_sizes.get((min_file_size, max_file_size))
+        if format_name:
+            return format_name
+
+        for min_format_size, max_format_size in format_sizes.keys():
+            if min_format_size - 2 <= min_file_size <= min_format_size + 2 and \
+                    max_format_size - 2 <= max_file_size <= max_format_size + 2:
+                return format_name
+
+        return f"{min_file_size}x{max_file_size}"
+
+    def _create_single_detail_pdf_paths(self) -> list[FilePath]:
+        single_draw_file_template = self.single_draw_dir + r"\\{0} {1}.pdf"
+        file_paths = [
+            FilePath(single_draw_file_template.format(number + 1, os.path.basename(file)))
+            for number, file in enumerate(self._draw_file_paths)
+        ]
+        return file_paths
+
+    def _fetch_main_draw_name(self) -> FileName:
+        if self._ui_merger.search_by_spec_radio_button.isChecked():
+            main_name = Path(self._ui_merger.specification_path).stem
+        else:
+            main_name = os.path.basename(self._path_to_search)
+        return FileName(main_name)
+
+    def _get_current_file_number(self) -> str | None:
+        # next code check if folder or file with same name exists if so:
+        # get maximum number of files and folders and incriminate +1 to name of new file and folder
+        try:
+            string_of_files = ' '.join(os.listdir(self._core_dir))
+        except FileNotFoundError:
+            return '01'
+
+        prefix_number = \
+            max(map(int, re.findall(rf'{self._main_draw_name} - (\d\d)(?= {self._today_date})', string_of_files)),
+                default=0)
+        prefix_number = str(prefix_number + 1) if prefix_number > 8 else '0' + str(prefix_number + 1)
+        return prefix_number
+
+    def _fetch_single_draw_dir(self) -> FilePath:
+        prefix_number = self._get_current_file_number()
+        _single_draw_dir = fr'{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}'
+        if self._need_to_be_split:
+            _single_draw_dir += rf'\{self._single_draw_dir_name}'
+        else:
+            _single_draw_dir += f' {self._single_draw_dir_name}'
+        return FilePath(_single_draw_dir)

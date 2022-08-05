@@ -5,16 +5,16 @@ import itertools
 import json
 import os
 import queue
-import re
 import shutil
 import sys
 import time
+from collections import defaultdict
 from enum import Enum
 from operator import itemgetter
 from tkinter import filedialog
-from typing import Optional
+from typing import Optional, BinaryIO
 
-import PyPDF2
+from PyPDF2 import PdfFileMerger, PdfFileWriter, PdfFileReader
 import fitz
 import pythoncom
 import win32com
@@ -26,7 +26,14 @@ import kompas_api
 import utils
 from widgets_tools import WidgetBuilder, MainListWidget, WidgetStyles
 from kompas_api import StampCell, get_kompas_file_data
-from pop_up_windows import SettingsWindow, RadioButtonsWindow, FILE_NOT_EXISTS_MESSAGE, SaveType, Filters
+from pop_up_windows import SettingsWindow, RadioButtonsWindow, SaveType, Filters
+from utils import FilePath, FILE_NOT_EXISTS_MESSAGE
+
+FILE_NOT_CHOSEN_MESSAGE = "Not_chosen"
+
+
+class FolderNotSelected(Exception):
+    pass
 
 
 class ErrorType(Enum):
@@ -768,7 +775,11 @@ class UiMerger(WidgetBuilder):
         else:
             self.start_merge_process(draws_list)
 
-    def start_merge_process(self, draws_list):
+    def start_merge_process(self, draws_list: list[str]):
+        def choose_folder(signal):
+            dict_for_pdf = filedialog.askdirectory(title="Укажите папку для сохранения")
+            self.data_queue.put(dict_for_pdf or FILE_NOT_CHOSEN_MESSAGE)
+
         self.data_queue = queue.Queue()
         search_path = self.search_path if self.serch_in_folder_radio_button.isChecked() \
             else os.path.dirname(self.specification_path)
@@ -777,6 +788,7 @@ class UiMerger(WidgetBuilder):
         self.thread.increase_step.connect(self.increase_step)
         self.thread.kill_thread.connect(self.stop_merge_thread)
         self.thread.errors.connect(self.send_error)
+        self.thread.choose_folder.connect(choose_folder)
         self.thread.status.connect(self.status_bar.showMessage)
         self.thread.progress_bar.connect(self.progress_bar.setValue)
         self.appl = None
@@ -924,93 +936,92 @@ class MergeThread(QThread):
     kill_thread = pyqtSignal()
     increase_step = pyqtSignal(bool)
     progress_bar = pyqtSignal(int)
+    choose_folder = pyqtSignal(bool)
 
-    def __init__(self, files, directory, data_queue):
-        self.files = files
-        self.search_path = directory
+    def __init__(self, files: list[FilePath], directory: FilePath, data_queue: queue.Queue):
+        self._files_path = files
+        self._search_path = directory
         self.data_queue = data_queue
-        self.constructor_class = QtWidgets.QFileDialog()
-        self.settings_window_data = merger.settings_window_data
+        self._constructor_class = QtWidgets.QFileDialog()
+        self._settings_window_data = merger.settings_window_data
+        self._need_to_split_file = self._settings_window_data.split_file_by_size
+        self._need_to_close_files: list[BinaryIO] = []
+
+        self._file_paths_creator: utils.MergerFolderData | None = None
         QThread.__init__(self)
 
     def run(self):
-        directory_to_save = self.select_save_folder()
-        if not directory_to_save:
-            self._kill_thread()
-        base_pdf_dir, single_draw_dir, main_name = self.make_paths(directory_to_save)
-        if not single_draw_dir and not base_pdf_dir:
+        try:
+            directory_to_save = self.select_save_folder()
+        except FolderNotSelected:
             self._kill_thread()
             return
 
+        self._file_paths_creator = self._initiate_file_paths_creator(directory_to_save)
+
+        single_draw_dir = self._file_paths_creator.single_draw_dir
         os.makedirs(single_draw_dir)
-        self.cdw_to_pdf(self.files, single_draw_dir)
-        pdf_file = self.merge_pdf_files(single_draw_dir, main_name)
+
+        single_pdf_file_paths = self._file_paths_creator.pdf_file_paths
+        self._convert_single_files_to_pdf(single_pdf_file_paths)
+
+        merge_data = self._create_merger_data(single_pdf_file_paths)
+        self._merge_pdf_files(merge_data)
+        self._close_file_objects()
+
+        if self._settings_window_data.watermark_path:
+            self._add_watermark(list(merge_data.keys()))
+
         if merger.delete_single_draws_after_merge_checkbox.isChecked():
             shutil.rmtree(single_draw_dir)
-        self.progress_bar.emit(0)
-        self.buttons_enable.emit(True)
-        os.system(f'explorer "{(os.path.normpath(os.path.dirname(single_draw_dir)))}"')
-        if not self.settings_window_data.split_file_by_size:
+
+        if not self._settings_window_data.split_file_by_size:
+            pdf_file = self._file_paths_creator.create_main_pdf_file_path()
             os.startfile(pdf_file)
+
+        os.system(f'explorer "{(os.path.normpath(os.path.dirname(single_draw_dir)))}"')
+
         self.status.emit(f'Закрытие Kompas')
-        self.progress_bar.emit(int(0))
         kompas_api.exit_kompas(self.appl)
+
+        self.buttons_enable.emit(True)
+        self.progress_bar.emit(int(0))
         self.status.emit('Слитие успешно завершено')
 
+    def _kill_thread(self):
+        self.errors.emit('Запись прервана, папка не была найдена')
+        self.buttons_enable.emit(True)
+        self.progress_bar.emit(0)
+        self.kill_thread.emit()
 
-    def select_save_folder(self):
-        directory_to_save = None
-        if self.settings_window_data.save_type == SaveType.MANUALLY_SAVE_FOLDER:
-            directory_to_save = filedialog.askdirectory(title="Выбрать папку")
-            if not directory_to_save:
-                return
+    def select_save_folder(self) -> FilePath | None:
+        # If request folder from this thread later when trying to retrieve kompas api
+        # Exception will be raised, that's why, folder is requested from main UiMerger class
+        if self._settings_window_data.save_type == SaveType.AUTO_SAVE_FOLDER:
+            return
+        self.choose_folder.emit(True)
+        while True:
+            time.sleep(0.1)
+            try:
+                directory_to_save = self.data_queue.get(block=False)
+            except queue.Empty:
+                pass
+            else:
+                break
+        if directory_to_save == FILE_NOT_CHOSEN_MESSAGE:
+            raise FolderNotSelected
         return directory_to_save
 
-    def make_paths(self, directory_to_save=None):
-        pdf_file_name = self.fetch_pdf_file_name()
-        today_date = time.strftime("%d.%m.%Y")
+    def _initiate_file_paths_creator(self, directory_to_save: FilePath | None = None) -> utils.MergerFolderData:
+        return utils.MergerFolderData(
+            self._search_path,
+            self._need_to_split_file,
+            self._files_path,
+            merger,
+            directory_to_save
+        )
 
-        need_to_be_split = self.settings_window_data.split_file_by_size
-        if not need_to_be_split:
-            base_pdf_dir = rf'{directory_to_save or self.search_path}\pdf'
-            pdf_file = r'%s\%s - 01 %s.pdf' % (base_pdf_dir, pdf_file_name, today_date)
-        else:
-            base_pdf_dir = r'%s\pdf\%s - 01 %s' % (directory_to_save or self.search_path,
-                                                   pdf_file_name, today_date)
-            pdf_file = r'%s\%s.pdf' % (base_pdf_dir, pdf_file_name)
-
-        single_draw_dir = os.path.splitext(pdf_file)[0] + " Однодетальные"
-
-        # next code check if folder or file with same name exists if so:
-        # get maximum number of file and folder and incriminate +1 to
-        # name of new file and folder
-        if need_to_be_split:
-            check_path = os.path.dirname(base_pdf_dir)
-        else:
-            check_path = base_pdf_dir
-
-        if os.path.exists(check_path) and pdf_file_name in ' '.join(os.listdir(check_path)):
-            string_of_files = ' '.join(os.listdir(check_path))
-            today_update = max(map(int, re.findall(rf'{pdf_file_name} - (\d\d)(?= {today_date})', string_of_files)),
-                               default=0)
-            if today_update:
-                today_update = str(today_update + 1) if today_update > 8 else '0' + str(today_update + 1)
-                if need_to_be_split:
-                    single_draw_dir = r'%s\pdf\%s - %s %s\Однодетальные' % (directory_to_save or self.search_path,
-                                                                            pdf_file_name, today_update, today_date)
-                else:
-                    single_draw_dir = r'%s\pdf\%s - %s %s Однодетальные' % (directory_to_save or self.search_path,
-                                                                            pdf_file_name, today_update, today_date)
-        return base_pdf_dir, single_draw_dir, pdf_file_name
-
-    def fetch_pdf_file_name(self) -> str:
-        if merger.search_by_spec_radio_button.isChecked():
-            main_name = os.path.basename(merger.specification_path)[:-4]
-        else:
-            main_name = os.path.basename(self.search_path)
-        return main_name
-
-    def cdw_to_pdf(self, files, single_draw_dir):
+    def _convert_single_files_to_pdf(self, pdf_file_paths: list[FilePath]):
         self.status.emit('Открытие Kompas')
         kompas_api7_module, application, const = kompas_api.get_kompas_api7()
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
@@ -1019,102 +1030,98 @@ class MergeThread(QThread):
         app = application.Application
         app.HideMessage = const.ksHideMessageYes
 
-        number = 0
-        for file in files:
-            number += 1
+        for file_path, pdf_file_path in zip(self._files_path, pdf_file_paths):
             self.increase_step.emit(True)
-            self.status.emit(f'Конвертация {file}')
+            self.status.emit(f'Конвертация {file_path}')
             converter.Convert(
-                file, single_draw_dir + "\\" + f'{number} ' + os.path.basename(file) + ".pdf", 0, False
+                file_path, pdf_file_path, 0, False
             )
         app.HideMessage = const.ksHideMessageNo
 
-    def merge_pdf_files(self, directory_with_draws, main_name):
-        watermark_path = self.settings_window_data.watermark_path
-
-        files = sorted(os.listdir(directory_with_draws), key=lambda fil: int(fil.split()[0]))
-        merger_instance = self.create_merger_instance(directory_with_draws, files)
-        if type(merger_instance) is dict:  # if file gonna be splited
-            for key, item in merger_instance.items():
-                format_name, merger_writer, _ = item
-                pdf_file = os.path.join(os.path.dirname(directory_with_draws),
-                                        f'{format_name}-{main_name}.pdf')
-                with open(pdf_file, 'wb') as pdf:
-                    merger_writer.write(pdf)
-                if watermark_path:
-                    self.add_watermark(pdf_file)
-            for key, item in merger_instance.items():
-                _, _, files = item
-                for file in files:
-                    file.close()
-        else:
-            pdf_file = os.path.join(os.path.dirname(directory_with_draws),
-                                    f'{os.path.basename(directory_with_draws)[:-14]}.pdf')
-            with open(pdf_file, 'wb') as pdf:
+    @staticmethod
+    def _merge_pdf_files(merge_data: dict[FilePath, PdfFileWriter | PdfFileMerger]):
+        for pdf_file_path, merger_instance in merge_data.items():
+            with open(pdf_file_path, 'wb') as pdf:
                 merger_instance.write(pdf)
-            for file in merger_instance.inputs:
-                file[0].close()
-            if watermark_path:
-                self.add_watermark(pdf_file)
 
-        return pdf_file
+    def _create_merger_data(self, pdf_file_paths: list[FilePath]) -> dict[FilePath, PdfFileWriter | PdfFileMerger]:
 
-    def create_merger_instance(self, directory, files):
-        #  если нужно разбиваем файлы или сливаем всё в один
-        need_to_split = self.settings_window_data.split_file_by_size
-
-        if need_to_split:
-            merger_instance = {595: ["A4", PyPDF2.PdfFileWriter(), []], 842: ["A3", PyPDF2.PdfFileWriter(), []],
-                               1190: ["A2", PyPDF2.PdfFileWriter(), []], 1683: ["A1", PyPDF2.PdfFileWriter(), []],
-                               'unknow': ['неопеределен', PyPDF2.PdfFileWriter(), []]}
+        if self._need_to_split_file:
+            merger_instance = self._create_split_merger_data(pdf_file_paths)
         else:
-            merger_instance = PyPDF2.PdfFileMerger()
+            merger_instance = self._create_single_merger_data(pdf_file_paths)
 
-        for filename in files:
-            file = open(os.path.join(directory, filename), 'rb')
-            merger_pdf_reader = PyPDF2.PdfFileReader(file)
-
-            if type(merger_instance) == dict:
-                for page in merger_pdf_reader.pages:
-                    size = int(sorted(page.mediaBox[2:])[0])
-                    try:
-                        format_size, py_pdf_instance, list_of_files = merger_instance[size]
-                    except KeyError:
-                        format_size, py_pdf_instance, list_of_files = merger_instance['unknow']
-
-                    py_pdf_instance.addPage(page)
-                    list_of_files.append(file)
-            else:
-                merger_instance.append(fileobj=file)
-            self.increase_step.emit(True)
-            self.status.emit(f'Сливание {filename}')
-        if need_to_split:
-            merger_instance = {key: value for key, value in merger_instance.items() if
-                               value[1].getNumPages()}
         return merger_instance
 
-    def add_watermark(self, pdf_file):
-        watermark_path = self.settings_window_data.watermark_path
-        watermark_position = self.settings_window_data.watermark_position
+    def _create_split_merger_data(self, pdf_file_paths) -> dict[FilePath, PdfFileWriter]:
+        # using different classes because PyPDF2.PdfFileWriter can add single page unlike PdfFileMerger
+        merger_instance = defaultdict(PdfFileWriter)
 
-        if not watermark_path or not watermark_position:
+        for pdf_file_path in pdf_file_paths:
+            file = self._get_file_obj(pdf_file_path)
+            merger_pdf_reader = PdfFileReader(file)
+
+            for page in merger_pdf_reader.pages:
+                size = page.mediaBox[2:]
+                file_path = self._file_paths_creator.create_main_pdf_file_path(size)
+                merger_instance[file_path].addPage(page)
+
+            self.increase_step.emit(True)
+            self.status.emit(f'Сливание {pdf_file_path}')
+
+        return merger_instance
+
+    def _create_single_merger_data(self, pdf_file_paths: list[FilePath]) -> dict[FilePath, PdfFileMerger]:
+        # using different classes because PyPDF2.PdfFileWriter can add single page unlike PdfFileMerger
+        merger_instance = PdfFileMerger()
+
+        for single_pdf_file_path in pdf_file_paths:
+            file = self._get_file_obj(single_pdf_file_path)
+            merger_instance.append(fileobj=file)
+
+            self.increase_step.emit(True)
+            self.status.emit(f'Сливание {single_pdf_file_path}')
+
+        file_path = self._file_paths_creator.create_main_pdf_file_path()
+        return {file_path: merger_instance}
+
+    def _get_file_obj(self, file_path: FilePath) -> BinaryIO:
+        file = open(file_path, 'rb')  # files will be closed later, using with would lead to blank pdf lists
+        self._need_to_close_files.append(file)
+        return file
+
+    def _close_file_objects(self):
+        for fileobj in self._need_to_close_files:
+            fileobj.close()
+        self._need_to_close_files = []
+
+    def _add_watermark(self, pdf_file_paths: list[FilePath]):
+        def add_watermark_to_file(_pdf_file_path: FilePath):
+            pdf_doc = fitz.open(_pdf_file_path)  # open the PDF
+            rect = fitz.Rect(watermark_position)  # where to put image: use upper left corner
+            for page in pdf_doc:
+                if not page.is_wrapped:
+                    page.wrap_contents()
+                try:
+                    page.insert_image(rect, filename=watermark_path, overlay=False)
+                except ValueError:
+                    self.send_errors.emit(
+                        'Заданы неверные координаты, размещения картинки, водяной знак не был добавлен'
+                    )
+                    return
+            pdf_doc.saveIncr()  # do an incremental save
+
+        watermark_path = self._settings_window_data.watermark_path
+        watermark_position = self._settings_window_data.watermark_position
+
+        if not watermark_position:
             return
         if not os.path.exists(watermark_path) or watermark_path == FILE_NOT_EXISTS_MESSAGE:
             self.send_errors.emit(f'Путь к файлу с картинкой не существует')
             return
-        pdf_doc = fitz.open(pdf_file)  # open the PDF
-        rect = fitz.Rect(watermark_position)  # where to put image: use upper left corner
-        for page in pdf_doc:
-            if not page.is_wrapped:
-                page.wrap_contents()
-            try:
-                page.insert_image(rect, filename=watermark_path, overlay=False)
-            except ValueError:
-                self.send_errors.emit(
-                    'Заданы неверные координаты, размещения картинки, водяной знак не был добавлен'
-                )
-                return
-        pdf_doc.saveIncr()  # do an incremental save
+
+        for pdf_file_path in pdf_file_paths:
+            add_watermark_to_file(pdf_file_path)
 
 
 class FilterThread(QThread):

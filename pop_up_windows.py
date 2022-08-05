@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from enum import Enum
 from collections import namedtuple
-from typing import NewType
 import json
 import os
 
@@ -11,13 +10,10 @@ from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QGridLayout, QWidget
 
 from widgets_tools import WidgetBuilder, ExcludeFolderListWidget, WidgetStyles
-from utils import date_today_by_int
+from utils import date_today_by_int, FilePath, FILE_NOT_EXISTS_MESSAGE
 
 DEFAULT_WATERMARK_PATH = 'bdt_stamp.png'
 DEFAULT_WATERMARK_LABEL = 'Стандартный'
-FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
-
-FilePath = NewType('FilePath', str)
 
 
 FilterWidgetPositions = namedtuple(
