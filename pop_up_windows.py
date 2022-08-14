@@ -1,62 +1,18 @@
 from __future__ import annotations
 
-from enum import Enum
-from collections import namedtuple
 import json
 import os
 
-from pydantic import BaseModel
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QGridLayout, QWidget
 
 from widgets_tools import WidgetBuilder, ExcludeFolderListWidget, WidgetStyles
-from utils import date_today_by_int, FilePath, FILE_NOT_EXISTS_MESSAGE
+from schemas import SettingsData, Filters, FilterWidgetPositions, UserSettings, FilePath, SaveType
+from utils import date_today_by_int, FILE_NOT_EXISTS_MESSAGE
+
 
 DEFAULT_WATERMARK_PATH = 'bdt_stamp.png'
 DEFAULT_WATERMARK_LABEL = 'Стандартный'
-
-
-FilterWidgetPositions = namedtuple(
-    'FilterWidgetPositions',
-    'check_box_position '
-    'combobox_position '
-    'input_line_position '
-    'combobox_radio_button_position '
-    'input_radio_button_position '
-)
-
-
-class UserSettings(BaseModel):
-    except_folders_list: list[str] | None
-    constructor_list: list[str] | None
-    checker_list: list[str] | None
-    sortament_list: list[str] | None
-    watermark_position: list[int]
-    add_default_watermark: bool = True
-    split_file_by_size: bool = False
-    auto_save_folder: bool = False
-    watermark_path: FilePath
-
-
-class SaveType(Enum):
-    AUTO_SAVE_FOLDER = 1
-    MANUALLY_SAVE_FOLDER = 2
-
-
-class Filters(BaseModel):
-    date_range: list[int, int] | None = None
-    constructor_list: list[str] | None = None
-    checker_list: list[str] | None = None
-    sortament_list: list[str] | None = None
-
-
-class SettingsData(BaseModel):
-    filters: Filters | None = None
-    watermark_path: FilePath | None = None
-    watermark_position: list[int] | None = None
-    split_file_by_size: bool = False
-    save_type: SaveType = SaveType.AUTO_SAVE_FOLDER
-    except_folders_list: list[str] | None = None
 
 
 class SettingsWindow(QtWidgets.QDialog):

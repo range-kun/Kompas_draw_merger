@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from contextlib import contextmanager
 import enum
 import os
 import re
-from typing import Optional, Any, Union
+from contextlib import contextmanager
+from typing import Any
 
 import pythoncom
 from win32com.client import Dispatch, gencache
 
+from schemas import DrawType, SpecSectionData, DrawData, FilePath, DrawObozn, DrawExecution, DrawName
+
+DIFFERENCE_ON_DRAW_MESSAGES = ["различияисполненийпосборочномучертежу", "отличияисполненийпосборочномучертежу"]
+
+SIZE_COLUMN = (1, 1, 0)
 OBOZN_COLUMN = (4, 1, 0)
 NAME_COLUMN = (5, 1, 0)
 WITHOUT_EXECUTION = 1000
@@ -20,6 +25,11 @@ class ObjectType(enum.IntEnum):
     REGULAR_LINE = 1
 
 
+class SpecType(enum.IntEnum):
+    REGULAR_SPEC = 17
+    GROUP_SPEC = 51
+
+
 class StampCell(enum.IntEnum):
     GAUGE_CELL = 3
     CONSTRUCTOR_NAME_CELL = 110
@@ -28,6 +38,14 @@ class StampCell(enum.IntEnum):
 
 
 class DocNotOpened(Exception):
+    pass
+
+
+class NoExecutions(Exception):
+    pass
+
+
+class NotSupportedSpecType(Exception):
     pass
 
 
@@ -71,187 +89,6 @@ def get_kompas_settings(application, kompas_object):
     return app, i_converter, docs
 
 
-def get_document_api(file_path: str, docs, kompas_api7_module):
-    doc = docs.Open(file_path, False, False)  # открываем документ, в невидимом режиме для записи
-    if doc is None:
-        raise DocNotOpened
-    if os.path.splitext(file_path)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
-        doc2d = kompas_api7_module.IKompasDocument2D(
-            doc._oleobj_.QueryInterface (kompas_api7_module.IKompasDocument2D.CLSID, pythoncom.IID_IDispatch))
-    else:  # если спецификация, то используем интерфейс для спецификации
-        doc2d = kompas_api7_module.ISpecificationDocument(
-            doc._oleobj_.QueryInterface
-            (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
-    return doc, doc2d
-
-
-def get_draws_from_specification(
-        spec_path: str, *,
-        only_document_list=False,
-        draw_obozn: str = None,
-        by_button_click=False,
-        column_number: list[int] = None
-):
-    kompas_api7_module, application, const = get_kompas_api7()
-    app = application.Application
-    app.HideMessage = const.ksHideMessageYes
-
-    response = create_spc_object(spec_path, app, kompas_api7_module, const)
-    if type(response) == str:
-        return response
-    oformlenie, spc_description, doc = response
-
-    if oformlenie not in [17, 51]:  # 17, 51 - работаем только в простой и групповой
-        return f"Указан не поддерживаемый тип спецификации {spec_path} \n"
-
-    if oformlenie == 17:
-        response = get_paths_from_simple_specification(
-            spc_description,
-            spec_path,
-            only_document_list
-        )
-    else:
-        if by_button_click:  # выбрать пользователю какое исполнение он хочет слить
-            executions = get_all_spec_executions(spc_description)
-            return executions
-        response = get_paths_from_group_spec(
-            spc_description,
-            spec_path,
-            only_document_list,
-            draw_obozn,
-            column_number
-        )
-        if type(response) == str:  # совпадение не найден
-            doc.close()
-            return f"\nИсполнение {draw_obozn} для групповой спецификации не найдено\n"
-
-    if only_document_list:
-        documentation_draws, errors = response
-        return documentation_draws, application, errors
-    documentation_draws, detail_draws, assembly_draws, errors = response
-
-    files: dict[str: list[tuple[str, str]]] = {}
-    if documentation_draws:
-        files["Сборочные чертежи"] = documentation_draws
-    if detail_draws:
-        files['Детали'] = detail_draws
-    if assembly_draws:
-        files["Сборочные единицы"] = assembly_draws
-    app.HideMessage = const.ksHideMessageNo
-    doc.Close(const.kdDoNotSaveChanges)
-    return files, application, errors
-
-
-def get_paths_from_simple_specification(
-        spc_description,
-        spec_path: str,
-        only_document_list: bool
-):
-    documentation_draws: list[tuple[str, str]] = []
-    assembly_draws: list[tuple[str, str]] = []
-    detail_draws: list[tuple[str, str]] = []
-    errors: list[str] = []
-
-    for i in spc_description.Objects:
-        if (i.ObjectType == ObjectType.REGULAR_LINE or i.ObjectType == 2) \
-                and i.Columns.Column(4, 1, 0):
-            obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
-            name = i.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
-            if not obozn:
-                continue
-            try:
-                size = i.Columns.Column(1, 1, 0).Text.Str.strip().lower()
-            except AttributeError:
-                size = None
-
-            if i.Section == 5:
-                documentation_draws.append((obozn, name))
-                if only_document_list:
-                    return documentation_draws, errors
-
-            elif i.Section == 15:
-                if is_detail(obozn):
-                    message = f"\nВозможно указана деталь в качестве спецификации " \
-                              f"-> {spec_path} ||| {obozn} \n"
-                    errors.append(message)
-                    continue
-                assembly_draws.append((obozn, name))
-
-            elif i.Section == 20 and size != 'б/ч' and size != 'бч':
-                if obozn == "различияисполненийпосборочномучертежу":
-                    continue
-                if "гост" in name or 'гост' in obozn:
-                    continue
-                detail_draws.append((obozn, name))
-    return documentation_draws, detail_draws, assembly_draws, errors
-
-
-def get_paths_from_group_spec(
-        spc_description,
-        spec_path: str,
-        only_document_list: bool,
-        draw_obozn: str,
-        column_numbers: list[int] = None
-):
-    documentation_draws: list[tuple[str, str]] = []
-    assembly_draws: list[tuple[str, str]] = []
-    detail_draws: list[tuple[str, str]] = []
-    errors: list[str] = []
-    registered_obozn: list[str] = []
-
-    if not column_numbers:
-        draw_info = fetch_obozn_execution_and_name(draw_obozn)
-
-        if draw_info is None:
-            execution = "-"
-        else:
-            _, execution = draw_info
-            if not execution[:-1].isdigit():  # если есть буква в конце
-                execution = execution[:-1]
-        response = get_column_number(spc_description, execution)
-        if type(response) == str:
-            return response
-        column_numbers = [response]
-
-    for i in spc_description.Objects:
-        for column_number in column_numbers:
-            try:
-                obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
-                name = i.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
-            except AttributeError:
-                continue
-
-            if i.Section == 5:
-                if obozn in registered_obozn:
-                    continue
-                documentation_draws.append((obozn, name))
-                registered_obozn.append(obozn)
-                if only_document_list:
-                    return documentation_draws, errors
-
-            elif i.ObjectType in [1, 2] and obozn and i.Columns.Column(6, column_number, 0).Text.Str:
-                if obozn in registered_obozn:
-                    continue
-                registered_obozn.append(obozn)
-                try:
-                    size = i.Columns.Column(1, 1, 0).Text.Str.strip().lower()
-                except AttributeError:
-                    size = None
-
-                if i.Section == 15:
-                    if is_detail(obozn):
-                        message = f"\nВозможно указана деталь в качестве спецификации " \
-                                  f"-> {spec_path} ||| {obozn} \n"
-                        errors.append(message)
-                        continue
-                    assembly_draws.append((obozn, name))
-
-                elif i.Section == 20 and size != 'б/ч' and size != 'бч':
-                    detail_draws.append((obozn, name))
-
-    return documentation_draws, detail_draws, assembly_draws, errors
-
-
 def exit_kompas(app):
     if not app.Visible:  # если компас в невидимом режиме
         app.Quit()  # закрываем компас
@@ -263,67 +100,203 @@ def is_detail(obozn: str) -> bool:
         return True
 
 
-def fetch_obozn_execution_and_name(draw_obozn: str) -> Optional[tuple[str | Any]]:
+def get_all_spec_executions(spc_description) -> dict[DrawExecution, int]:
+    executions = {}
+
+    for spc_line in spc_description.Objects:
+        if spc_line.ObjectType != ObjectType.OBOZN_ISP:
+            continue
+        try:
+            for column_number in range(1, 10):
+                execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
+                if execution_in_draw == '-':
+                    execution_in_draw = 'Базовое исполнение'
+                if verify_column_not_empty(spc_description, column_number):
+                    executions[DrawExecution(execution_in_draw)] = column_number
+        except AttributeError:
+            break
+    if not executions:
+        raise NoExecutions
+
+    executions['Все исполнения'] = WITHOUT_EXECUTION
+    return executions
+
+
+def get_obozn_from_specification(
+        spec_path: FilePath, *,
+        only_document_list: bool =False,
+        column_number: list[int] = None,
+        initial_call: bool=False,
+        spec_obozn: DrawObozn = None
+) -> tuple[list[SpecSectionData], Any, list[str]]:
+    kompas_api7_module, application, const = get_kompas_api7()
+    app = application.Application
+    app.HideMessage = const.ksHideMessageYes
+
+    response = create_spc_object(spec_path, app, kompas_api7_module, const)
+    oformlenie, spc_description, doc = response
+
+    if oformlenie not in [SpecType.REGULAR_SPEC, SpecType.GROUP_SPEC]:  # работаем только в простой и групповой
+        doc.Close(const.kdDoNotSaveChanges)
+        app.HideMessage = const.ksHideMessageNo
+        raise NotSupportedSpecType(f"\n{os.path.basename(spec_path)} - указан не поддерживаемый тип спефецикации")
+
+    try:
+        if oformlenie == SpecType.REGULAR_SPEC:
+            response = get_obozn_from_simple_specification(
+                spc_description,
+                spec_path,
+                only_document_list
+            )
+        else:  # group sdec
+            if initial_call:  # выбрать пользователю какое исполнение он хочет слить
+                column_number = yield get_all_spec_executions(spc_description)
+            response = get_obozn_from_group_spec(
+                spc_description,
+                spec_path,
+                only_document_list,
+                column_number,
+                spec_obozn
+            )
+    finally:
+        doc.Close(const.kdDoNotSaveChanges)
+        app.HideMessage = const.ksHideMessageNo
+
+    spec_data, errors = response
+    return spec_data, application, errors
+
+
+def get_draw_obozn_name_size(line) -> tuple[DrawObozn | None, DrawName | None, str | None]:
+    try:
+        draw_obozn = line.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+        draw_name = line.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
+        size = line.Columns.Column(*SIZE_COLUMN).Text.Str.strip().lower()
+    except AttributeError:
+        return None, None, None
+    return draw_obozn, draw_name, size
+
+
+def get_obozn_from_simple_specification(
+        spc_description,
+        spec_path: FilePath,
+        only_document_list: bool
+) -> tuple[list[SpecSectionData], list[str]]:
+
+    assembly_draws: list[DrawData] = []
+    spec_draws: list[DrawData] = []
+    detail_draws: list[DrawData] = []
+    errors: list[str] = []
+
+    for line in spc_description.Objects:
+        draw_obozn, draw_name, size = get_draw_obozn_name_size(line)
+        if not draw_obozn and not draw_name:
+            continue
+
+        if line.Section == DrawType.ASSEMBLY_DRAW:
+            assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+            if only_document_list:
+                return create_spec_output(assembly_draws), errors
+
+        elif line.Section == DrawType.SPEC_DRAW:
+            if is_detail(draw_obozn):
+                message = f"\nВозможно указана деталь в качестве спецификации " \
+                          f"-> {spec_path} ||| {draw_obozn} \n"
+                errors.append(message)
+                continue
+            spec_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+
+        elif line.Section == DrawType.DETAIL and size != 'б/ч' and size != 'бч':
+            if draw_obozn.lower() in DIFFERENCE_ON_DRAW_MESSAGES or "гост" in draw_name or "гост" in draw_obozn:
+                continue
+            detail_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+
+    return create_spec_output(assembly_draws, spec_draws, detail_draws), errors
+
+
+def get_obozn_from_group_spec(
+        spc_description,
+        spec_path: str,
+        only_document_list: bool,
+        column_numbers: list[int] = None,
+        spec_obozn: DrawObozn = None
+) -> tuple[list[SpecSectionData], list[str]]:
+
+    assembly_draws: list[DrawData] = []
+    spec_draws: list[DrawData] = []
+    detail_draws: list[DrawData] = []
+    errors: list[str] = []
+    registered_obozn: list[DrawObozn] = []
+
+    def get_execution() -> DrawExecution:
+        draw_info = fetch_obozn_and_execution(spec_obozn)
+
+        if draw_info is None:
+            _execution = "-"
+        else:
+            _, _execution = draw_info
+            if not _execution[:-1].isdigit():  # если есть буква в конце
+                _execution = _execution[:-1]
+        return _execution
+
+    if not column_numbers:
+        execution = get_execution()
+        column_numbers = [get_column_number(spc_description, execution)]
+
+    for line in spc_description.Objects:
+        draw_obozn, draw_name, size = get_draw_obozn_name_size(line)
+        if not draw_obozn or draw_obozn in registered_obozn:
+            continue
+
+        if line.Section == DrawType.ASSEMBLY_DRAW:
+            assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+            registered_obozn.append(draw_obozn)
+            if only_document_list:
+                return create_spec_output(assembly_draws), errors
+
+        for column_number in column_numbers:
+            if line.ObjectType not in [1, 2] or not line.Columns.Column(6, column_number, 0).Text.Str:
+                continue
+
+            registered_obozn.append(draw_obozn)
+            if line.Section == DrawType.SPEC_DRAW:
+                if is_detail(draw_obozn):
+                    message = f"\nВозможно указана деталь в качестве спецификации " \
+                              f"-> {spec_path} ||| {draw_obozn} \n"
+                    errors.append(message)
+                    continue
+                spec_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+
+            elif line.Section == DrawType.DETAIL and size != "б/ч" and size != "бч":
+                if draw_obozn.lower() in DIFFERENCE_ON_DRAW_MESSAGES or "гост" in draw_name or "гост" in draw_obozn:
+                    detail_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+
+    return create_spec_output(assembly_draws, spec_draws, detail_draws), errors
+
+
+def create_spec_output(
+        assembly_draws: list[DrawData],
+        spec_draws: list[DrawData] = None,
+        detail_draws: list[DrawData] = None) -> list[SpecSectionData]:
+    spec_data = []
+    for draw_type, draw_names in [
+            (DrawType.ASSEMBLY_DRAW, assembly_draws),
+            (DrawType.DETAIL, detail_draws),
+            (DrawType.SPEC_DRAW, spec_draws)]:
+        if not draw_names:
+            continue
+        spec_data.append(SpecSectionData(draw_type=draw_type, draw_names=draw_names))
+
+    return spec_data
+
+
+def fetch_obozn_and_execution(draw_obozn: DrawObozn) -> tuple[str | Any] | None:
     draw_info = re.search(r"(.+)(?:-)(0[13579][а-яёa]?$)", draw_obozn, re.I)
     if not draw_info:
         return
     return draw_info.groups()
 
 
-def get_all_spec_executions(spc_description) -> Union[str, dict[str, int]]:
-    executions: dict[str, int] = {}
-    return_executions: dict[str, int] = {}
-
-    for spc_line in spc_description.Objects:
-        if spc_line.ObjectType == ObjectType.OBOZN_ISP:
-            try:
-                for column_number in range(1, 10):
-                    execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
-                    if execution_in_draw == '-':
-                        execution_in_draw = 'Базовое исполнение'
-                    executions[execution_in_draw] = column_number
-            except AttributeError:
-                break
-    if not executions:
-        return 'Ошибка открытия спецификации'
-
-    for column_text, column_number in executions.items():
-        is_this_column_not_emty = verify_column_not_empty(spc_description, column_number)
-        if is_this_column_not_emty:
-            return_executions[column_text] = column_number
-    return_executions['Все исполнения'] = WITHOUT_EXECUTION
-    return return_executions
-
-
-def get_column_number(spc_description, execution: str) -> Union[str, int]:
-    for spc_line in spc_description.Objects:
-        if spc_line.ObjectType == ObjectType.OBOZN_ISP:
-            try:
-                for column_number in range(1, 10):
-                    execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
-                    execution_in_draw = execution_in_draw[1:] if len(execution_in_draw) > 1 \
-                        else execution_in_draw  # исполнение м.б - или -01
-                    if execution_in_draw == execution:
-                        break
-            except AttributeError:
-                return "Совпадение не найдено"
-            break
-
-    is_this_column_not_emty = verify_column_not_empty(spc_description, column_number)
-    if is_this_column_not_emty:
-        return column_number
-    return "Совпадение не найдено"
-
-
-def verify_column_not_empty(spc_description, column_number):
-    for spc_line in spc_description.Objects:
-        if spc_line.ObjectType in [1, 2] and spc_line.Columns.Column(*OBOZN_COLUMN):
-
-            if spc_line.Columns.Column(6, column_number, 0).Text.Str.strip():
-                return True
-
-
-def create_spc_object(spec_path: str, app, kompas_api7_module, const):
+def create_spc_object(spec_path: FilePath, app, kompas_api7_module, const):
     docs = app.Documents
     doc = docs.Open(spec_path, False, False)  # открываем документ, в невидимом режиме для записи
 
@@ -337,7 +310,8 @@ def create_spc_object(spec_path: str, app, kompas_api7_module, const):
             doc.Close(const.kdDoNotSaveChanges)
         except AttributeError:
             pass
-        return f"Ошибка при открытии спецификации {spec_path} \n"
+        raise FileExistsError(f"\n{os.path.basename(spec_path)} "
+                              f"- ошибка при открытии спецификации обновите базу данных")
 
     i_layout_sheet = doc2d.LayoutSheets.Item(0)
     oformlenie = i_layout_sheet.LayoutStyleNumber  # считываем номер оформления документа
@@ -346,33 +320,71 @@ def create_spc_object(spec_path: str, app, kompas_api7_module, const):
     return oformlenie, spc_description, doc
 
 
-def verify_its_correct_spec_path(spec_path: str, execution: str):
-    def look_for_line(line: str) -> bool:
-        for i in spc_description.Objects:
-            if i.ObjectType in [1, 2] and i.Columns.Column(*OBOZN_COLUMN):
-                obozn = i.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
-                if line == obozn:
+def verify_its_correct_spec_path(spec_path: FilePath, execution: DrawExecution):
+    def look_for_line_with_str(list_of_messages: list[str]) -> bool:
+        for line in spc_description.Objects:
+            if line.ObjectType in [1, 2] and line.Columns.Column(*OBOZN_COLUMN):
+                obozn = line.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+                if obozn in list_of_messages:
                     return True
 
     kompas_api7_module, application, const = get_kompas_api7()
     app = application.Application
     app.HideMessage = const.ksHideMessageYes
     response = create_spc_object(spec_path, app, kompas_api7_module, const)
-    if type(response) == str:
-        return
 
     oformlenie, spc_description, doc = response
-    if oformlenie != 51:
-        response = look_for_line('различияисполненийпосборочномучертежу')
+    if oformlenie == SpecType.REGULAR_SPEC:
+        response = look_for_line_with_str(DIFFERENCE_ON_DRAW_MESSAGES)
         doc.Close(const.kdDoNotSaveChanges)
         return response
-    response = get_column_number(spc_description, execution)
-    if type(response) == str:
-        doc.Close(const.kdDoNotSaveChanges)
-        return
 
-    doc.Close(const.kdDoNotSaveChanges)
-    return True
+    try:
+        column_number = get_column_number(spc_description, execution)
+    finally:
+        doc.Close(const.kdDoNotSaveChanges)
+
+    if column_number:
+        return True
+
+
+def get_column_number(spc_description, execution: DrawExecution) -> int | None:
+    for spc_line in spc_description.Objects:
+        if spc_line.ObjectType != ObjectType.OBOZN_ISP:
+            continue
+        try:
+            for column_number in range(1, 10):
+                execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
+                execution_in_draw = execution_in_draw[1:] if len(execution_in_draw) > 1 \
+                    else execution_in_draw  # исполнение м.б - или -01
+                if execution_in_draw == execution and verify_column_not_empty(spc_description, column_number):
+                    return column_number
+        except AttributeError:
+            raise NoExecutions
+        break
+    raise NoExecutions
+
+
+def verify_column_not_empty(spc_description, column_number: int) -> bool | None:
+    for spc_line in spc_description.Objects:
+        if spc_line.ObjectType in [1, 2] \
+                and spc_line.Columns.Column(*OBOZN_COLUMN) \
+                and spc_line.Columns.Column(6, column_number, 0).Text.Str.strip():
+            return True
+
+
+def get_document_api(file_path: str, docs, kompas_api7_module):
+    doc = docs.Open(file_path, False, False)  # открываем документ, в невидимом режиме для записи
+    if doc is None:
+        raise DocNotOpened
+    if os.path.splitext(file_path)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
+        doc2d = kompas_api7_module.IKompasDocument2D(
+            doc._oleobj_.QueryInterface (kompas_api7_module.IKompasDocument2D.CLSID, pythoncom.IID_IDispatch))
+    else:  # если спецификация, то используем интерфейс для спецификации
+        doc2d = kompas_api7_module.ISpecificationDocument(
+            doc._oleobj_.QueryInterface
+            (kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
+    return doc, doc2d
 
 
 @contextmanager

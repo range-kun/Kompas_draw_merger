@@ -12,27 +12,38 @@ from collections import defaultdict
 from enum import Enum
 from operator import itemgetter
 from tkinter import filedialog
-from typing import Optional, BinaryIO
+from typing import BinaryIO
 
-from PyPDF2 import PdfFileMerger, PdfFileWriter, PdfFileReader
+
 import fitz
 import pythoncom
 import win32com
+from PyPDF2 import PdfFileMerger, PdfFileWriter, PdfFileReader
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
 from win32com.client import Dispatch
 
 import kompas_api
 import utils
-from widgets_tools import WidgetBuilder, MainListWidget, WidgetStyles
-from kompas_api import StampCell, get_kompas_file_data
+from kompas_api import StampCell, get_kompas_file_data, NoExecutions, NotSupportedSpecType
 from pop_up_windows import SettingsWindow, RadioButtonsWindow, SaveType, Filters
+from schemas import DrawData, DrawType, DrawObozn, SpecSectionData, DrawExecution
 from utils import FilePath, FILE_NOT_EXISTS_MESSAGE
+from widgets_tools import WidgetBuilder, MainListWidget, WidgetStyles
 
 FILE_NOT_CHOSEN_MESSAGE = "Not_chosen"
+EXECUTION_NOT_CHOSEN = "Исполнение не выбрано поиск завершен"
 
 
 class FolderNotSelected(Exception):
+    pass
+
+
+class ExecutionNotSelected(Exception):
+    pass
+
+
+class SpecificationEmpty(Exception):
     pass
 
 
@@ -58,28 +69,26 @@ class UiMerger(WidgetBuilder):
         self.setup_ui()
 
         self.kompas_ext = ['.cdw', '.spw']
-        self.search_path = None
+        self.search_path: FilePath | None = None
         self.current_progress = 0
         self.progress_step = 0
-        self.data_queue = None
+        self.data_queue = queue.Queue()
         self.missing_list = []
         self.draw_list = []
         self.appl = None
 
-        self.bypassing_folders_inside_checkbox_status = 'Yes'
-        self.bypassing_folders_inside_checkbox_current_status = 'Yes'
-        self.bypassing_sub_assemblies_chekbox_status = 'No'
-        self.bypassing_sub_assemblies_chekbox_current_status = 'No'
+        self.bypassing_folders_inside_previous_status = True
+        self.bypassing_sub_assemblies_previous_status = False
 
-        self.thread = None
-        self.filter_thread = None
-        self.data_base_thread = None
-        self.recursive_thread = None
+        self.merge_thread: QThread | None = None
+        self.filter_thread: QThread | None = None
+        self.data_base_thread: QThread | None = None
+        self.search_path_thread: QThread | None = None
 
-        self.data_base_files = None
+        self.data_base_file: dict[DrawObozn, [list[FilePath]]] | None = None
         self.specification_path = None
         self.previous_filters = {}
-        self.draws_in_specification = {}
+        self.obozn_in_specification: list[SpecSectionData] = []
 
     def setup_ui(self):
         self.setup_styles()
@@ -178,14 +187,12 @@ class UiMerger(WidgetBuilder):
             font=self.arial_12_font,
             text='С обходом всех папок внутри',
             activate=True,
-            command=self.change_bypassing_folders_inside_checkbox_status
         )
         self.grid_layout.addWidget(self.bypassing_folders_inside_checkbox, 3, 3, 1, 1)
 
         self.bypassing_sub_assemblies_chekbox = self.make_checkbox(
             font=self.arial_12_font,
             text='С поиском по подсборкам',
-            command=self.change_bypassing_sub_assemblies_chekbox_status
         )
         self.bypassing_sub_assemblies_chekbox.setEnabled(False)
         self.grid_layout.addWidget(self.bypassing_sub_assemblies_chekbox, 3, 1, 1, 1)
@@ -349,7 +356,7 @@ class UiMerger(WidgetBuilder):
     def check_search_path(self, search_path):
         if os.path.isfile(search_path):
             if self.search_by_spec_radio_button.isChecked():
-                search_path = self.check_data_base_file(search_path)
+                self.check_data_base_file(search_path)
             else:
                 self.send_error('Укажите папку для поиска с файламиа, а не файл')
         else:
@@ -361,96 +368,84 @@ class UiMerger(WidgetBuilder):
                 return None
 
     def choose_specification(self):
-        file_path = filedialog.askopenfilename(
+        spec_path = FilePath(filedialog.askopenfilename(
             initialdir="",
             title="Выбор cпецификации",
             filetypes=(("spec", "*.spw"),)
-        )
-        if not file_path:
+        ))
+        if not spec_path:
             return
 
-        response = self.check_specification(file_path, True)
-        if not response:
+        is_spec_path_set = self.set_specification_path(spec_path)
+        if not is_spec_path_set:
             return
-        elif type(response) == str:
-            self.send_error(response)
-            return
-        self.path_to_spec_field.setText(file_path)
+
+        self.path_to_spec_field.setText(spec_path)
         cdw_file = self.source_of_draws_field.toPlainText()
         if cdw_file:
-            if cdw_file == self.search_path and self.data_base_files:
+            if cdw_file == self.search_path and self.data_base_file:
                 self.get_paths_to_specifications()
             else:
                 self.get_data_base()
 
-    def check_specification(self, file_path: str, by_button_click: bool = False):
-        if file_path.endswith('.spw') and os.path.isfile(file_path):
-            response = kompas_api.get_draws_from_specification(
-                file_path,
-                by_button_click=by_button_click
-            )
-            if type(response) == str:  # ошибка при открытии спецификации
-                return response
-            if type(response) == dict:  # открыли групповую спеку при проверки получили исполнения
-                radio_window = RadioButtonsWindow(response.keys())
-                radio_window.exec_()
-                if not radio_window.radio_state:
-                    self.send_error('Исполнение не выбрано')
-                    return
-
-                column_numbers = response[radio_window.radio_state]
-                if column_numbers == kompas_api.WITHOUT_EXECUTION:
-                    column_numbers = list(response.values())[:-1]
-                else:
-                    column_numbers = [column_numbers]
-                response = kompas_api.get_draws_from_specification(
-                    file_path, column_number=column_numbers
-                )
-
-            draws_in_specification, self.appl, errors = response
-
-            self.missing_list.extend(errors)
-            if draws_in_specification:
-                self.draws_in_specification = draws_in_specification
-                self.specification_path = file_path
-            else:
-                self.send_error('Спецификация пуста, как и вся наша жизнь')
-                return
-        else:
-            self.send_error('Указанный файл не является спецификацией или не существует')
-            return
-        return 1
+    def set_specification_path(self, spec_path: FilePath):
+        try:
+            utils.check_specification(spec_path)
+        except utils.FileNotSpec as e:
+            self.send_error(e)
+            return False
+        self.specification_path = spec_path
+        return True
 
     def get_paths_to_specifications(self, refresh=False):
         self.list_widget.clear()
-        filename = self.path_to_spec_field.toPlainText()
-        if not filename:
+        spec_path = self.path_to_spec_field.toPlainText()
+        if not spec_path:
             return
-        if filename != self.specification_path:
-            response = self.check_specification(filename)
-            if not response:
+        if spec_path != self.specification_path:
+            is_spec_path_set = self.set_specification_path(spec_path)
+            if not is_spec_path_set:
                 return
-            if type(response) == str:
-                self.send_error(response)  # ошибка при открытии спецификации
-        self.start_recursion(refresh)
+        self.start_search_paths_thread(refresh)
 
-    def start_recursion(self, refresh):
+    def start_search_paths_thread(self, refresh: bool):
+        def choose_spec_execution(response: dict[DrawExecution, int]):
+            radio_window = RadioButtonsWindow(response.keys())
+            radio_window.exec_()
+            if not radio_window.radio_state:
+                self.data_queue.put(EXECUTION_NOT_CHOSEN)
+                return
+
+            column_numbers = response[radio_window.radio_state]
+            if column_numbers == kompas_api.WITHOUT_EXECUTION:
+                column_numbers = list(response.values())[:-1]
+            else:
+                column_numbers = [column_numbers]
+            self.data_queue.put(column_numbers)
+
+        self.bypassing_sub_assemblies_previous_status = self.bypassing_sub_assemblies_chekbox.isChecked()
+
         only_one_specification = not self.bypassing_sub_assemblies_chekbox.isChecked()
-        self.bypassing_sub_assemblies_chekbox_status = 'Yes' \
-            if self.bypassing_sub_assemblies_chekbox.isChecked() else 'No'
-        self.recursive_thread = RecursionThread(self.specification_path, self.draws_in_specification,
-                                                self.data_base_files, only_one_specification, refresh)
-        self.recursive_thread.buttons_enable.connect(self.switch_button_group)
-        self.recursive_thread.finished.connect(self.handle_specification_result)
-        self.recursive_thread.status.connect(self.status_bar.showMessage)
-        self.recursive_thread.errors.connect(self.send_error)
-        self.recursive_thread.start()
+        self.search_path_thread = SearchPathsThread(
+            self.specification_path,
+            self.data_base_file,
+            only_one_specification,
+            refresh,
+            self.data_queue
+        )
+        self.search_path_thread.buttons_enable.connect(self.switch_button_group)
+        self.search_path_thread.finished.connect(self.handle_search_path_thread_results)
+        self.search_path_thread.status.connect(self.status_bar.showMessage)
+        self.search_path_thread.errors.connect(self.send_error)
+        self.search_path_thread.choose_spec_execution.connect(choose_spec_execution)
+        self.search_path_thread.start()
 
-    def handle_specification_result(self, missing_list, draw_list, refresh):
+    def handle_search_path_thread_results(self, missing_list, draw_list, refresh):
         self.status_bar.showMessage('Завершено получение файлов из спецификации')
         self.appl = None
         self.missing_list.extend(missing_list)
         self.draw_list = draw_list
+
         if self.missing_list:
             self.print_out_errors(ErrorType.FILE_MISSING)
         if self.draw_list:
@@ -463,19 +458,6 @@ class UiMerger(WidgetBuilder):
                     self.apply_filters(draw_list)
                 else:
                     self.list_widget.fill_list(draw_list=self.draw_list)
-                    self.switch_button_group(True)
-
-    def change_bypassing_sub_assemblies_chekbox_status(self):
-        if self.bypassing_sub_assemblies_chekbox.isChecked():
-            self.bypassing_sub_assemblies_chekbox_current_status = 'Yes'
-        else:
-            self.bypassing_sub_assemblies_chekbox_current_status = 'No'
-
-    def change_bypassing_folders_inside_checkbox_status(self):
-        if self.bypassing_folders_inside_checkbox.isChecked():
-            self.bypassing_folders_inside_checkbox_current_status = 'Yes'
-        else:
-            self.bypassing_folders_inside_checkbox_current_status = 'No'
 
     def print_out_errors(self, error_type: ErrorType) -> str | None:
         def group_missing_files_info():
@@ -549,18 +531,15 @@ class UiMerger(WidgetBuilder):
                 self.send_error('Обновление завершено')
                 self.list_widget.fill_list(draw_list=draw_list)
         else:
-            specification = self.path_to_spec_field.toPlainText()
+            specification_path = self.path_to_spec_field.toPlainText()
             if not search_path:
                 self.send_error('Укажите папку с чертежамиили файл .json')
                 return
-            if not specification:
+            if not specification_path:
                 self.send_error('Укажите файл спецификации')
                 return
-            response_1 = self.check_specification(specification)
-            if not response_1:
-                return
-            if type(response_1) == str:
-                self.send_error(response_1)
+            is_spec_path_set = self.set_specification_path(specification_path)
+            if not is_spec_path_set:
                 return
             self.get_data_base(refresh=refresh)
 
@@ -617,62 +596,6 @@ class UiMerger(WidgetBuilder):
             kompas_api.exit_kompas(self.appl)
         event.accept()
 
-    def save_data_base(self):
-        choice = QtWidgets.QMessageBox.question(
-            self,
-            'База данных',
-            "Сохранить полученные данные?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-        )
-        if choice == QtWidgets.QMessageBox.Yes:
-            self.apply_data_base_save()
-        else:
-            QtWidgets.QMessageBox.information(
-                self,
-                'Отмена записи',
-                'Данные о связях хранятся в памяти'
-            )
-            self.save_data_base_file_button.setEnabled(True)
-
-    def apply_data_base_save(self):
-        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
-        if filename:
-            try:
-                with open(filename, 'w') as file:
-                    json.dump(self.data_base_files, file, ensure_ascii=False)
-            except:
-                self.send_error("В базе данных имеются ошибки")
-                return
-            self.source_of_draws_field.setText(filename)
-            self.search_path = filename
-        if self.save_data_base_file_button.isEnabled():
-            QtWidgets.QMessageBox.information(
-                self,
-                'Запись данных',
-                'Запись данных успешно произведена'
-            )
-            self.save_data_base_file_button.setEnabled(False)
-
-    def get_data_base_path(self):
-        file_path = filedialog.askopenfilename(
-            initialdir="",
-            title="Загрузить файл",
-            filetypes=(("Json file", "*.json"),)
-        )
-        if file_path:
-            self.load_data_base(file_path)
-        else:
-            self.send_error('Файл с базой не выбран .json')
-
-    def load_data_base(self, filename, refresh=False):
-        filename = filename or self.search_path
-        response = self.check_data_base_file(filename)
-        if not response:
-            return
-        self.search_path = filename
-        self.source_of_draws_field.setText(filename)
-        self.get_paths_to_specifications(refresh)
-
     def check_data_base_file(self, filename):
         if not os.path.exists(filename):
             self.send_error('Указан несуществующий путь')
@@ -682,7 +605,7 @@ class UiMerger(WidgetBuilder):
             return None
         with open(filename) as file:
             try:
-                self.data_base_files = json.load(file)
+                self.data_base_file = json.load(file)
             except json.decoder.JSONDecodeError:
                 self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
                 return None
@@ -698,8 +621,8 @@ class UiMerger(WidgetBuilder):
         except_folders_list = self.settings_window_data.except_folders_list
 
         self.list_widget.clear()
-        self.bypassing_folders_inside_checkbox_status = 'Yes' \
-            if self.bypassing_folders_inside_checkbox.isChecked() else 'No'
+        self.bypassing_folders_inside_previous_status = self.bypassing_folders_inside_checkbox.isChecked()
+
         if self.bypassing_folders_inside_checkbox.isChecked() \
                 or self.search_by_spec_radio_button.isChecked():
             for this_dir, dirs, files_here in os.walk(search_path, topdown=True):
@@ -716,9 +639,10 @@ class UiMerger(WidgetBuilder):
         else:
             self.send_error('Нету файлов .cdw или .spw, в выбраной папке(ах) с указанными параметрами')
 
-    def get_files_in_one_folder(self, folder):
+    def get_files_in_one_folder(self, folder: FilePath):
         # sorting in the way so specification sheet is the first if .cdw and .spw files has the same name
-        draw_list = [os.path.splitext(i) for i in os.listdir(folder) if os.path.splitext(i)[1] in self.kompas_ext]
+        draw_list = [os.path.splitext(file_path) for file_path in os.listdir(folder)
+                     if os.path.splitext(file_path)[1] in self.kompas_ext]
         draw_list = sorted([(i[0], '.adw' if i[1] == '.spw' else '.cdw') for i in draw_list], key=itemgetter(0, 1))
         draw_list = [os.path.join(folder, (i[0] + '.spw' if i[1] == '.adw' else i[0] + '.cdw')) for i in draw_list]
         draw_list = map(os.path.normpath, draw_list)
@@ -732,8 +656,8 @@ class UiMerger(WidgetBuilder):
         elif self.search_by_spec_radio_button.isChecked() \
                 and (self.search_path != self.source_of_draws_field.toPlainText()
                      or self.specification_path != self.path_to_spec_field.toPlainText()
-                     or self.bypassing_sub_assemblies_chekbox_current_status
-                     != self.bypassing_sub_assemblies_chekbox_status):
+                     or self.bypassing_sub_assemblies_chekbox.isChecked()
+                     != self.bypassing_sub_assemblies_previous_status):
             choice = QtWidgets.QMessageBox.question(
                 self,
                 "Изменения",
@@ -746,8 +670,8 @@ class UiMerger(WidgetBuilder):
                 self.merge_files_in_one()
         elif self.serch_in_folder_radio_button.isChecked() and (
                 self.search_path != self.source_of_draws_field.toPlainText()
-                or self.bypassing_folders_inside_checkbox_current_status
-                != self.bypassing_folders_inside_checkbox_status
+                or self.bypassing_folders_inside_checkbox.isChecked()
+                != self.bypassing_folders_inside_previous_status
         ):
             choice = QtWidgets.QMessageBox.question(
                 self,
@@ -757,9 +681,7 @@ class UiMerger(WidgetBuilder):
             )
             if choice == QtWidgets.QMessageBox.Yes:
                 self.refresh_draws_in_list()
-                self.merge_files_in_one()
-            else:
-                self.merge_files_in_one()
+            self.merge_files_in_one()
         else:
             self.merge_files_in_one()
 
@@ -780,24 +702,24 @@ class UiMerger(WidgetBuilder):
             dict_for_pdf = filedialog.askdirectory(title="Укажите папку для сохранения")
             self.data_queue.put(dict_for_pdf or FILE_NOT_CHOSEN_MESSAGE)
 
-        self.data_queue = queue.Queue()
         search_path = self.search_path if self.serch_in_folder_radio_button.isChecked() \
             else os.path.dirname(self.specification_path)
-        self.thread = MergeThread(draws_list, search_path, self.data_queue)
-        self.thread.buttons_enable.connect(self.switch_button_group)
-        self.thread.increase_step.connect(self.increase_step)
-        self.thread.kill_thread.connect(self.stop_merge_thread)
-        self.thread.errors.connect(self.send_error)
-        self.thread.choose_folder.connect(choose_folder)
-        self.thread.status.connect(self.status_bar.showMessage)
-        self.thread.progress_bar.connect(self.progress_bar.setValue)
+        self.merge_thread = MergeThread(draws_list, search_path, self.data_queue)
+        self.merge_thread.buttons_enable.connect(self.switch_button_group)
+        self.merge_thread.increase_step.connect(self.increase_step)
+        self.merge_thread.kill_thread.connect(self.stop_merge_thread)
+        self.merge_thread.errors.connect(self.send_error)
+        self.merge_thread.choose_folder.connect(choose_folder)
+        self.merge_thread.status.connect(self.status_bar.showMessage)
+        self.merge_thread.progress_bar.connect(self.progress_bar.setValue)
+
         self.appl = None
-        self.thread.start()
+        self.merge_thread.start()
 
     def stop_merge_thread(self):
         self.switch_button_group(True)
         self.status_bar.showMessage('Папка не выбрана, запись прервана')
-        self.thread.terminate()
+        self.merge_thread.terminate()
 
     def clear_data(self):
         self.search_path = None
@@ -807,7 +729,7 @@ class UiMerger(WidgetBuilder):
             self.source_of_draws_field.setPlaceholderText("Выберите папку с файлами в формате .cdw или .spw")
         else:
             self.source_of_draws_field.setPlaceholderText(
-                "Выберите папку с файлами в формате .cdw или .spw \n или файл с базой данных в формате .json"
+                "Выберите папку с файлами в формате .cdw или .spw \n или файл с базой чертежей в формате .json"
             )
         self.path_to_spec_field.clear()
         self.path_to_spec_field.setPlaceholderText('Укажите путь до файла со спецификацией')
@@ -846,11 +768,14 @@ class UiMerger(WidgetBuilder):
             self.source_of_draws_field.setPlaceholderText(
                 "Выберите папку с файлами в формате .cdw или .spw"
             )
+            self.choose_folder_button.setText("Выбор папки \n с чертежами для поиска")
+
         else:
             self.source_of_draws_field.setPlaceholderText(
                 "Выберите папку с файлами в формате "
-                ".cdw или .spw \n или файл с базой данных в формате .json"
+                ".cdw или .spw \n или файл с базой чертежей в формате .json"
             )
+            self.choose_folder_button.setText("Выбор папки для\n создания базы чертежей")
 
     def calculate_step(self, number_of_files, filter_only=False, get_data_base=False):
         self.current_progress = 0
@@ -875,6 +800,7 @@ class UiMerger(WidgetBuilder):
     def switch_button_group(self, switch=None):
         if not switch:
             switch = False if self.merge_files_button.isEnabled() else True
+
         self.merge_files_button.setEnabled(switch)
         self.choose_folder_button.setEnabled(switch)
         self.additional_settings_button.setEnabled(switch)
@@ -898,6 +824,7 @@ class UiMerger(WidgetBuilder):
 
     def get_data_base_from_folder(self, files, refresh=False):
         self.calculate_step(len(files), get_data_base=True)
+
         self.data_base_thread = DataBaseThread(files, refresh)
         self.data_base_thread.buttons_enable.connect(self.switch_button_group)
         self.data_base_thread.calculate_step.connect(self.calculate_step)
@@ -905,6 +832,7 @@ class UiMerger(WidgetBuilder):
         self.data_base_thread.progress_bar.connect(self.progress_bar.setValue)
         self.data_base_thread.increase_step.connect(self.increase_step)
         self.data_base_thread.finished.connect(self.handle_data_base_results)
+
         self.data_base_thread.start()
 
     def handle_data_base_results(
@@ -915,11 +843,11 @@ class UiMerger(WidgetBuilder):
             refresh=False
     ):
         self.progress_bar.setValue(0)
-        self.status_bar.showMessage('Завершено получение Базы Данных')
+        self.status_bar.showMessage('Завершено получение Базы Чератежей')
         if reset_application:
             self.appl = None
         if data_base:
-            self.data_base_files = data_base
+            self.data_base_file = data_base
             self.save_data_base()
             self.get_paths_to_specifications(refresh)
         else:
@@ -927,6 +855,62 @@ class UiMerger(WidgetBuilder):
         if errors_list:
             self.missing_list = errors_list
             self.print_out_errors(ErrorType.FILE_NOT_OPENED)
+
+    def save_data_base(self):
+        choice = QtWidgets.QMessageBox.question(
+            self,
+            'База Чертежей',
+            "Сохранить полученные данные?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if choice == QtWidgets.QMessageBox.Yes:
+            self.apply_data_base_save()
+        else:
+            QtWidgets.QMessageBox.information(
+                self,
+                'Отмена записи',
+                'Данные о связях хранятся в памяти'
+            )
+            self.save_data_base_file_button.setEnabled(True)
+
+    def apply_data_base_save(self):
+        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
+        if filename:
+            try:
+                with open(filename, 'w') as file:
+                    json.dump(self.data_base_file, file, ensure_ascii=False)
+            except:
+                self.send_error("В базе чертежей имеются ошибки")
+                return
+            self.source_of_draws_field.setText(filename)
+            self.search_path = filename
+        if self.save_data_base_file_button.isEnabled():
+            QtWidgets.QMessageBox.information(
+                self,
+                'Запись данных',
+                'Запись данных успешно произведена'
+            )
+            self.save_data_base_file_button.setEnabled(False)
+
+    def get_data_base_path(self):
+        file_path = filedialog.askopenfilename(
+            initialdir="",
+            title="Загрузить файл",
+            filetypes=(("Json file", "*.json"),)
+        )
+        if file_path:
+            self.load_data_base(file_path)
+        else:
+            self.send_error('Файл с базой не выбран .json')
+
+    def load_data_base(self, filename, refresh=False):
+        filename = filename or self.search_path
+        response = self.check_data_base_file(filename)
+        if not response:
+            return
+        self.search_path = filename
+        self.source_of_draws_field.setText(filename)
+        self.get_paths_to_specifications(refresh)
 
 
 class MergeThread(QThread):
@@ -1027,8 +1011,8 @@ class MergeThread(QThread):
         kompas6_api5_module, kompas_object, kompas6_constants = kompas_api.get_kompas_api5()
         self.appl = kompas_object
         doc_app, converter, _ = kompas_api.get_kompas_settings(application, kompas_object)
-        app = application.Application
-        app.HideMessage = const.ksHideMessageYes
+        _app = application.Application
+        _app.HideMessage = const.ksHideMessageYes
 
         for file_path, pdf_file_path in zip(self._files_path, pdf_file_paths):
             self.increase_step.emit(True)
@@ -1036,7 +1020,7 @@ class MergeThread(QThread):
             converter.Convert(
                 file_path, pdf_file_path, 0, False
             )
-        app.HideMessage = const.ksHideMessageNo
+        _app.HideMessage = const.ksHideMessageNo
 
     @staticmethod
     def _merge_pdf_files(merge_data: dict[FilePath, PdfFileWriter | PdfFileMerger]):
@@ -1319,93 +1303,176 @@ class DataBaseThread(QThread):
         return sorted_paths[0]
 
 
-class RecursionThread(QThread):
+class SearchPathsThread(QThread):
+    # this thread will fill list widget with system paths from spec, by they obozn_in_specification
+    # parameter, using data_base_file
     status = pyqtSignal(str)
     finished = pyqtSignal(list, list, bool)
     buttons_enable = pyqtSignal(bool)
     errors = pyqtSignal(str)
+    choose_spec_execution = pyqtSignal(dict)
+    kill_thread = pyqtSignal()
 
-    def __init__(self, specification, draws_in_specification, data_base_files, only_one_specification, refresh):
-        self.draw_list = []
-        self.missing_list = []
+    def __init__(
+            self,
+            specification_path: FilePath,
+            data_base_file,
+            only_one_specification: bool,
+            refresh: bool,
+            data_queue: queue.Queue
+    ):
+        self.draw_paths: list[FilePath] = []
+        self.missing_list: list = []
         self.appl = None
         self.refresh = refresh
-        self.specification_path = specification
-        self.only_one_specification = only_one_specification
-        self.draws_in_specification = draws_in_specification
-        self.data_base_files = data_base_files
+        self.specification_path = specification_path
+        self.without_sub_assembles = only_one_specification
+        self.data_base_file = data_base_file
         self.error = 1
+        self.data_queue = data_queue
         QThread.__init__(self)
 
     def run(self):
         self.buttons_enable.emit(False)
-        self.process_specification()
+        self.status.emit(f'Обработка {os.path.basename(self.specification_path)}')
+        try:
+            obozn_in_specification, self.appl, errors = self.get_obozn_from_specification()
+        except (FileExistsError, ExecutionNotSelected, SpecificationEmpty, NotSupportedSpecType) as e:
+            self.errors.emit(getattr(e, 'message', str(e)))
+        except NoExecutions:
+            self.errors.emit(f"{os.path.basename(self.specification_path)} - Для груповой спецефикации"
+                             f"не были получены исполнения")
+        else:
+            self.process_specification(obozn_in_specification)
+
         if self.appl:
             self.status.emit(f'Закрытие Kompas')
             kompas_api.exit_kompas(self.appl)
-        self.finished.emit(self.missing_list, self.draw_list, self.refresh)
+        self.buttons_enable.emit(True)
+        self.finished.emit(self.missing_list, self.draw_paths, self.refresh)
 
-    def process_specification(self):
-        self.draw_list.append(self.specification_path)
-        self.recursive_draws_traversal(self.draws_in_specification)
+    def get_obozn_from_specification(self):
+        def select_execution(_executions: dict[DrawExecution, int]):
+            self.choose_spec_execution.emit(_executions)
+            while True:
+                time.sleep(0.1)
+                try:
+                    execution = self.data_queue.get(block=False)
+                except queue.Empty:
+                    pass
+                else:
+                    break
+            if execution == EXECUTION_NOT_CHOSEN:
+                raise ExecutionNotSelected(EXECUTION_NOT_CHOSEN)
+            return execution
 
-    def recursive_draws_traversal(self, draw_list, spec_path: Optional[str] = None):
+        gen_obj = kompas_api.get_obozn_from_specification(
+            self.specification_path,
+            initial_call=True
+        )
+        try:
+            executions = next(gen_obj)
+            column_numbers = select_execution(executions)
+            gen_obj.send(column_numbers)
+        except StopIteration as e:
+            response = e.value
+
+        obozn_in_specification, self.appl, errors = response
+        self.missing_list.extend(errors)
+        if not obozn_in_specification:
+            raise SpecificationEmpty(f'{os.path.basename(self.specification_path)} - '
+                                     f'Спецификация пуста, как и вся наша жизнь, обновите файл базы чертежей')
+
+        return response
+
+    def process_specification(self, draws_in_specification: list[SpecSectionData]):
+        self.draw_paths.append(self.specification_path)
+        self.recursive_path_searcher(self.specification_path, draws_in_specification)
+        # have to put self.obozn_in_specification in because function calls herself with different input data
+
+    def recursive_path_searcher(
+            self,
+            spec_path: FilePath,
+            obozn_in_specification: list[SpecSectionData]
+    ):
         # spec_path берется не None если идет рекурсия
-        spec_path = spec_path or self.specification_path
         self.status.emit(f'Обработка {os.path.basename(spec_path)}')
 
-        for group_name, draws_description in draw_list.items():
-            if group_name in ["Сборочные чертежи", "Детали"]:
-                for draw_full_name in draws_description:
-                    cdw_file_path = self.fetch_draw_path(
-                        draw_full_name,
-                        file_extension='.cdw',
-                        file_path=spec_path
-                    )
-                    if cdw_file_path:
-                        self.draw_list.append(cdw_file_path)
-            else:  # сборочные единицы
-                for draw_full_name in draws_description:
-                    spw_file_path = self.fetch_draw_path(
-                        draw_full_name,
-                        file_extension='.spw',
-                        file_path=spec_path
-                    )
-                    if not spw_file_path:
-                        continue
-                    self.draw_list.append(spw_file_path)
+        for section_data in obozn_in_specification:
+            if section_data.draw_type in [DrawType.ASSEMBLY_DRAW, DrawType.DETAIL]:
+                self.draw_paths.extend(self.get_cdw_paths_from_specification(section_data, spec_path=spec_path))
+            else:  # Specification paths
+                self.fill_draw_list_from_specification(section_data, spec_path=spec_path)
 
-                    if self.only_one_specification:
-                        response = kompas_api.get_draws_from_specification(
-                            spw_file_path,
-                            only_document_list=True,
-                            draw_obozn=draw_full_name[0]
-                        )
-                        if type(response) == str:  # ошибка при открытии спецификации
-                            self.missing_list.append(response)
-                            continue
+    def get_cdw_paths_from_specification(self, section_data: SpecSectionData, spec_path: FilePath,) -> list[FilePath]:
+        draw_paths = []
+        for draw_data in section_data.draw_names:
+            draw_file_path = FilePath(self.fetch_draw_path_from_data_base(
+                draw_data,
+                file_extension=".cdw",
+                file_path=spec_path
+            ))
+            if draw_file_path and draw_file_path not in draw_paths:  # одинаковые пути для одной спеки не добавляем
+                draw_paths.append(draw_file_path)
+        return draw_paths
 
-                        cdw_file, self.appl, errors = response
-                        if errors:
-                            self.missing_list.extend(errors)
-                    else:
-                        response = kompas_api.get_draws_from_specification(
-                            spw_file_path,
-                            draw_obozn=draw_full_name[0]
-                        )
-                        if type(response) == str:  # ошибка при открытии спецификации
-                            self.missing_list.append(response)
-                            continue
+    def fill_draw_list_from_specification(self, section_data: SpecSectionData, spec_path: FilePath):
+        registered_draws: list[FilePath] = []
+        for draw_data in section_data.draw_names:
+            spw_file_path = FilePath(self.fetch_draw_path_from_data_base(
+                draw_data,
+                file_extension='.spw',
+                file_path=spec_path
+            ))
+            if not spw_file_path:
+                continue
+            if spw_file_path in registered_draws:
+                continue
+            registered_draws.append(spw_file_path)
 
-                        draws_in_specification, self.appl, errors = response
-                        if errors:
-                            self.missing_list.extend(errors)
-                        self.recursive_draws_traversal(draws_in_specification, spw_file_path)
+            try:
+                gen_obj = kompas_api.get_obozn_from_specification(
+                    spw_file_path,
+                    only_document_list=self.without_sub_assembles,
+                    spec_obozn=draw_data.draw_obozn
+                )
+                next(gen_obj)
+            except (FileExistsError, NotSupportedSpecType) as e:
+                self.missing_list.append(getattr(e, 'message', str(e)))
+                continue
+            except NoExecutions:
+                self.missing_list.append(f"\n{os.path.basename(self.specification_path)} - Для груповой спецефикации"
+                                         f"не были получены исполнения, обновите базу чертежей")
+                continue
+            except StopIteration as e:
+                response = e.value
+                draws_in_specification, _, errors = response
+                if errors:
+                    self.missing_list.extend(errors)
+                self.draw_paths.append(spw_file_path)
+                self.recursive_path_searcher(spw_file_path, draws_in_specification)
 
-    def fetch_draw_path(self, item: tuple[str, str], file_extension: str, file_path: str) -> Optional[str]:
-        draw_obozn, draw_name = item
+    @staticmethod
+    def get_correct_draw_path(draw_path: list[FilePath], file_extension: str) -> FilePath:
+        """
+        Length could be More than one then constructor by mistake give the
+        same name to spec file and assembly file.
+        For example assembly draw should be XXX-3.06.01.00 СБ but in spec it's XXX-3.06.01.00
+        so it's the same name as spec file
+        """
+        if len(draw_path) > 1:
+            return [file_path for file_path in draw_path if file_path.endswith(file_extension)][0]
+        return draw_path[0]
+
+    def fetch_draw_path_from_data_base(
+            self,
+            draw_data: DrawData,
+            file_extension: str,
+            file_path: FilePath) -> FilePath | None:
+        draw_obozn, draw_name = draw_data.draw_obozn, draw_data.draw_name
+
         try:
-            draw_path = self.data_base_files[draw_obozn.lower()]
+            draw_path = self.data_base_file[draw_obozn.lower()]
         except KeyError:
             draw_path = []
             if file_extension == ".spw":
@@ -1416,55 +1483,78 @@ class RecursionThread(QThread):
                 missing_draw_info = (spec_path, ' - '.join(missing_draw))
                 self.missing_list.append(missing_draw_info)
                 return
-        if len(draw_path) > 1:
-            draw_path = [i for i in draw_path if i.endswith(file_extension)]
+        else:
+            draw_path = self.get_correct_draw_path(draw_path, file_extension)
 
-        if os.path.exists(draw_path[0]):
-            return draw_path[0]
+        if os.path.exists(draw_path):
+            return draw_path
         else:
             if self.error == 1:  # print this message only once
                 self.errors.emit('Некоторые пути в базе являются недействительным,'
-                                 'обновите базу данных')
+                                 'обновите базу чертежей')
                 self.error += 1
             return
 
-    def try_fetch_spec_path(self, spec_obozn: str) -> Optional[str]:
-        draw_info = kompas_api.fetch_obozn_execution_and_name(spec_obozn)
-        if not draw_info:
-            last_symbol = ""
+    def try_fetch_spec_path(self, spec_obozn: DrawObozn) -> FilePath | None:
+        def look_for_path_with_double_obozn_in_stamp() -> FilePath | None:
+            """
+            Иногда в штампе указываектся обозначение для двух исполнений одной сборки xxx.00.00.00 и xxx.00.00.00-01
+            при формирование базы данных, ключ для такого чертежа будет записан следующим образом:
+            xxx.00.00.00xxx.00.00.01-01 данный цикл проверяет имеется ли такой ключ в базе данных
+            """
+            modification_symbol = ""
             if not spec_obozn[-1].isdigit():
-                last_symbol = spec_obozn[-1]
+                # if draw have been modified xxx.00.00.01 -> xxx.00.00.01A it's gonna be A modification symbol
+                modification_symbol = spec_obozn[-1]
 
             db_obozn = spec_obozn
-            spec_path = ""
             for num in range(1, 4):  # обычно максимальное количество исполнений до -03
-                db_obozn += spec_obozn + f"-0{num}{last_symbol}"
-                spec_path = self.data_base_files.get(db_obozn)
-                if spec_path:
-                    break
-            if spec_path:
+                db_obozn += spec_obozn + f"-0{num}{modification_symbol}"
+                if spec_path := self.data_base_file.get(db_obozn):
+                    return spec_path
+
+        def look_for_path_with_no_specification(_spec_obozn: DrawObozn, execution: DrawExecution) -> FilePath | None:
+            """
+            при формировании спецификации в штампе указывается только одна сборка
+            а различные исполнения указываются
+            только на чертеже при этом состав и количество деталей не изменно,
+            """
+            spec_path = self.data_base_file.get(_spec_obozn.strip())
+            if not spec_path:
+                return
+            spec_path = self.get_correct_draw_path(spec_path, ".spw")
+
+            try:
+                is_that_correct_spec_path = kompas_api.verify_its_correct_spec_path(spec_path, execution)
+            except (FileExistsError, NoExecutions):
+                return
+            if is_that_correct_spec_path is True:
                 return spec_path
+
+        draw_info = self.get_obozn_and_execution(spec_obozn)
+
+        if not draw_info:
+            return look_for_path_with_double_obozn_in_stamp()
+        spec_obozn, exection = draw_info
+        return look_for_path_with_no_specification(spec_obozn, exection)
+
+    @staticmethod
+    def get_obozn_and_execution(spec_obozn: DrawObozn) -> tuple[DrawObozn, DrawExecution] | None:
+        draw_info = kompas_api.fetch_obozn_and_execution(spec_obozn)
+        if not draw_info:
             return
+        draw_obozn, execution = draw_info
+        modification_symbol = ""
+        if not execution[-1].isdigit():
+            execution, modification_symbol, = execution[:-1], execution[-1]
 
-        obozn, execution = draw_info
-        last_symbol = ""
-        if not execution[-1].isdigit():  # если есть буква в конце
-            last_symbol = execution[-1]
-            execution = execution[:-1]
-
-        # чертежи идут с четными номерами, парсим нечетные
-        number_of_execution = int(execution) - 1
+        execution_number = int(execution) - 1  # как правило указываются четные номера сборок xxx.00.00.00, xxx.00.00.02
         spc_execution = ""  # исполнеение для поиска по бд
-        if number_of_execution:
-            spc_execution = f"-0{number_of_execution}" + last_symbol
+        if execution_number:
+            spc_execution = f"-0{execution_number}" + modification_symbol
 
-        obozn += spc_execution
-        spec_path = self.data_base_files.get(obozn.strip())
-        is_that_correct_path = kompas_api.verify_its_correct_spec_path(spec_path[0], execution)
-        if not is_that_correct_path:
-            return
-
-        return spec_path
+        draw_obozn += spc_execution
+        return draw_obozn, execution
 
 
 if __name__ == '__main__':

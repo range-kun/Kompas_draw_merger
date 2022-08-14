@@ -2,15 +2,15 @@ import os
 import re
 import time
 from datetime import datetime
-from collections import  defaultdict
 from pathlib import Path
-from typing import NewType
+
+from schemas import FilePath, FileName
 
 FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
 
 
-FilePath = NewType('FilePath', str)
-FileName = NewType('FileName', str)
+class FileNotSpec(Exception):
+    pass
 
 
 def date_today_by_int() -> list[int]:
@@ -19,6 +19,13 @@ def date_today_by_int() -> list[int]:
 
 def get_today_date():
     return time.strftime("%d.%m.%Y")
+
+
+def check_specification(spec_path: FilePath):
+    if not spec_path.endswith('.spw') or not os.path.isfile(spec_path):
+        raise FileNotSpec('Указанный файл не является спецификацией или не существует')
+    if not os.path.isfile(spec_path):
+        raise FileExistsError("Указанный файл не существует")
 
 
 def date_to_seconds(date_string):
