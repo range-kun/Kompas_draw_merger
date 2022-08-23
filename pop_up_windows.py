@@ -7,7 +7,7 @@ from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QGridLayout, QWidget
 
 from widgets_tools import WidgetBuilder, ExcludeFolderListWidget, WidgetStyles
-from schemas import SettingsData, Filters, FilterWidgetPositions, UserSettings, FilePath, SaveType
+from schemas import SettingsData, Filters, FilterWidgetPositions, UserSettings, FilePath, SaveType, DrawExecution
 from utils import date_today_by_int, FILE_NOT_EXISTS_MESSAGE
 
 
@@ -505,8 +505,7 @@ class FilterSection(QtWidgets.QDialog):
 
 
 class RadioButtonsWindow(QtWidgets.QDialog):
-
-    def __init__(self, executions: list[str]):
+    def __init__(self, executions: list[DrawExecution]):
         QtWidgets.QDialog.__init__(self)
         self.construct_class = WidgetBuilder()
         style_class = WidgetStyles()

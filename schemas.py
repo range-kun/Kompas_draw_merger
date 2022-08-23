@@ -1,6 +1,6 @@
 from collections import namedtuple
 from enum import Enum, IntEnum
-from typing import NewType
+from typing import Any, NewType, NamedTuple
 
 from pydantic import BaseModel
 
@@ -69,3 +69,9 @@ FilterWidgetPositions = namedtuple(
     'combobox_radio_button_position '
     'input_radio_button_position '
 )
+
+
+class ThreadKompasAPI(NamedTuple):
+    kompas_api7_module: Any
+    application_stream: Any
+    const: Any

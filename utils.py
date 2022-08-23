@@ -4,7 +4,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from schemas import FilePath, FileName
+from kompas_api import fetch_obozn_and_execution
+from schemas import FilePath, FileName, DrawObozn, DrawExecution
 
 FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
 
@@ -128,3 +129,56 @@ class MergerFolderData:
         else:
             _single_draw_dir += f' {self._single_draw_dir_name}'
         return FilePath(_single_draw_dir)
+
+
+class DrawOboznCreation:
+    def __init__(self, draw_obozn: DrawObozn):
+        self.draw_obozn = draw_obozn
+        self.need_to_verify_path = False
+        self.execution: DrawExecution | None = None
+
+    @property
+    def draw_obozn_list(self) -> list[DrawObozn]:
+        draw_info = fetch_obozn_and_execution(self.draw_obozn)
+        if not draw_info:
+            return self._create_duplicate_obozn_list()
+        self.need_to_verify_path = True
+        _, self.execution, _ = draw_info
+        return self._create_obozn_with_different_executions(*draw_info)
+
+    def _create_duplicate_obozn_list(self) -> list[DrawObozn]:
+        """
+            Иногда в штампе указываектся обозначение для двух исполнений одной сборки xxx.00.00.00 и xxx.00.00.00-01
+            при формирование базы данных, ключ для такого чертежа будет записан следующим образом:
+            xxx.00.00.00xxx.00.00.01-01 данный цикл проверяет имеется ли такой ключ в базе данных
+        """
+        spec_obozn_list = []
+        _modification_symbol = ""
+        if not self.draw_obozn[-1].isdigit():
+            # if draw have been modified xxx.00.00.01 -> xxx.00.00.01A it's gonna be A modification symbol
+            _modification_symbol = self.draw_obozn[-1]
+
+        db_obozn = self.draw_obozn
+        for num in range(1, 4):  # обычно максимальное количество исполнений до -03
+            db_obozn += self.draw_obozn + f"-0{num}{_modification_symbol}"
+            spec_obozn_list.append(db_obozn)
+        return spec_obozn_list
+
+    @staticmethod
+    def _create_obozn_with_different_executions(
+            spec_obozn: DrawObozn,
+            execution: DrawExecution,
+            modification_symbol: str
+    ) -> list[DrawObozn]:
+        """
+            При формировании спецификации в штампе указывается только одна сборка
+            а различные исполнения указываются
+            только на чертеже при этом состав и количество деталей не изменно.
+            Или может быть групповая спецефикация с одной спекой
+        """
+        obozn_list = [
+            DrawObozn(f"{spec_obozn}-0{execution_number}" + modification_symbol)
+            for execution_number in range(int(execution), 0, -1)
+        ]
+        obozn_list.append(DrawObozn(f"{spec_obozn}{modification_symbol}"))
+        return obozn_list
