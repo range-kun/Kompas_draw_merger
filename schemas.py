@@ -1,4 +1,5 @@
 from collections import namedtuple
+from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import Any, NewType, NamedTuple
 
@@ -75,3 +76,10 @@ class ThreadKompasAPI(NamedTuple):
     kompas_api7_module: Any
     application_stream: Any
     const: Any
+
+
+@dataclass
+class DoublePathsData:
+    draw_obozn: DrawObozn
+    spw_paths: list[FilePath]
+    cdw_paths: list[FilePath]

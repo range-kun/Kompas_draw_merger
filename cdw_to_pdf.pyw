@@ -12,8 +12,7 @@ from collections import defaultdict
 from enum import Enum
 from operator import itemgetter
 from tkinter import filedialog
-from typing import BinaryIO
-
+from typing import BinaryIO, Callable
 
 import fitz
 import pythoncom
@@ -24,11 +23,12 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from win32com.client import Dispatch
 
 import kompas_api
+import schemas
 import utils
 from kompas_api import StampCell, DocNotOpened, NoExecutions, NotSupportedSpecType, CoreKompass, Converter, KompasAPI, \
     SpecPathChecker, OboznSearcher
 from pop_up_windows import SettingsWindow, RadioButtonsWindow, SaveType, Filters
-from schemas import DrawData, DrawType, DrawObozn, SpecSectionData, DrawExecution, ThreadKompasAPI
+from schemas import DrawData, DrawType, DrawObozn, SpecSectionData, DrawExecution, ThreadKompasAPI, DoublePathsData
 from utils import FilePath, FILE_NOT_EXISTS_MESSAGE, DrawOboznCreation
 from widgets_tools import WidgetBuilder, MainListWidget, WidgetStyles
 
@@ -45,6 +45,10 @@ class ExecutionNotSelected(Exception):
 
 
 class SpecificationEmpty(Exception):
+    pass
+
+
+class DifferentDrawsForSameObozn(Exception):
     pass
 
 
@@ -127,7 +131,7 @@ class UiMerger(WidgetBuilder):
         self.choose_folder_button = self.make_button(
             text="Выбор папки \n с чертежами для поиска",
             font=self.arial_12_font,
-            command=self.choose_initial_folder
+            command=self.choose_source_of_draw_folder
         )
         self.grid_layout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
 
@@ -136,7 +140,7 @@ class UiMerger(WidgetBuilder):
             font=self.arial_12_font,
             enabled=False,
             command=self.get_data_base_path
-         )
+        )
         self.grid_layout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
     def setup_spec_section(self):
@@ -330,39 +334,25 @@ class UiMerger(WidgetBuilder):
                 continue
         self.send_error('Копирование завершено')
 
-    def choose_initial_folder(self):
+    def choose_source_of_draw_folder(self):
         directory_path = filedialog.askdirectory(title="Укажите папку для поиска")
         if not directory_path:
             return
 
-        draw_list = self.check_search_path(directory_path)
-        if not draw_list:
-            self.send_error(f"В указанной папке отсутсвуют чертежи формата .cdw, .spw")
-            return
-
-        self.source_of_draws_field.setText(self.search_path)
         if self.serch_in_folder_radio_button.isChecked():
-            self.calculate_step(len(draw_list), filter_only=True)
-            if self.progress_step:
-                self.apply_filters(draw_list)
-            else:
-                self.list_widget.fill_list(draw_list=draw_list)
+            self.fill_list_widget_with_paths(search_path=directory_path)
         else:
-            self.get_data_base(draw_list)
+            self.get_data_base(directory_path)
 
-    def check_search_path(self, search_path):
-        if os.path.isfile(search_path):
-            if self.search_by_spec_radio_button.isChecked():
-                self.check_data_base_file(search_path)
-            else:
-                self.send_error('Укажите папку для поиска с файламиа, а не файл')
-        else:
-            draw_list = self.get_all_files_in_folder(search_path)
-            if draw_list:
-                self.search_path = search_path
-                return draw_list
-            else:
-                return None
+    def set_search_path(self, path: str):
+        self.search_path = path
+        self.source_of_draws_field.setText(path)
+
+    def proceed_folder_search_path(self, folder_path: str):
+        if draw_list := self.get_all_draw_paths_in_folder(folder_path):
+            self.search_path = folder_path
+            self.source_of_draws_field.setText(folder_path)
+            return draw_list
 
     def choose_specification(self):
         spec_path = FilePath(filedialog.askopenfilename(
@@ -370,22 +360,22 @@ class UiMerger(WidgetBuilder):
             title="Выбор cпецификации",
             filetypes=(("spec", "*.spw"),)
         ))
-        if not spec_path:
-            return
 
         is_spec_path_set = self.set_specification_path(spec_path)
         if not is_spec_path_set:
             return
 
         self.path_to_spec_field.setText(spec_path)
-        cdw_file = self.source_of_draws_field.toPlainText()
-        if cdw_file:
+        if cdw_file := self.source_of_draws_field.toPlainText():
             if cdw_file == self.search_path and self.data_base_file:
                 self.get_paths_to_specifications()
             else:
-                self.get_data_base()
+                self.get_data_base(cdw_file)
 
     def set_specification_path(self, spec_path: FilePath):
+        if not spec_path:
+            self.send_error('Файлы спецификации не выбран')
+            return False
         try:
             utils.check_specification(spec_path)
         except utils.FileNotSpec as e:
@@ -397,8 +387,6 @@ class UiMerger(WidgetBuilder):
     def get_paths_to_specifications(self, refresh=False):
         self.list_widget.clear()
         spec_path = self.path_to_spec_field.toPlainText()
-        if not spec_path:
-            return
         if spec_path != self.specification_path:
             is_spec_path_set = self.set_specification_path(spec_path)
             if not is_spec_path_set:
@@ -450,14 +438,14 @@ class UiMerger(WidgetBuilder):
                 self.list_widget.fill_list(draw_list=self.draw_list)
                 self.start_merge_process(draw_list)
             else:
-                self.calculate_step(len(draw_list), filter_only=True)
+                self.calculate_progress_step(len(draw_list), filter_only=True)
                 if self.progress_step:
-                    self.apply_filters(draw_list)
+                    self.start_filter_thread(self.handle_filter_results, draw_list)
                 else:
                     self.list_widget.fill_list(draw_list=self.draw_list)
 
     def print_out_errors(self, error_type: ErrorType) -> str | None:
-        def group_missing_files_info():
+        def group_missing_files_info() -> str:
             grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
             grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
             missing_message = '\n'.join(grouped_list)
@@ -477,7 +465,7 @@ class UiMerger(WidgetBuilder):
             return window_title, error_message
 
         one_line_messages = []
-        grouped_messages = []
+        grouped_messages: list[schemas.FileName, DrawObozn] = []
         for error in self.missing_list:
             if type(error) == str:
                 one_line_messages.append(error)
@@ -509,60 +497,56 @@ class UiMerger(WidgetBuilder):
             self.send_error("Ошибка записи")
             return
 
+    def fill_list_widget_with_paths(self, search_path: str):
+        if not search_path:
+            self.send_error('Укажите папку с чертежамиили')
+            return
+
+        draw_list = self.proceed_folder_search_path(search_path)
+        if not draw_list:
+            return
+
+        self.list_widget.clear()
+        self.calculate_progress_step(len(draw_list), filter_only=True)
+        if self.progress_step:
+            self.start_filter_thread(self.handle_filter_results, draw_list)
+        else:
+            self.list_widget.fill_list(draw_list=draw_list)
+
     def refresh_draws_in_list(self, refresh=False):
         search_path = self.source_of_draws_field.toPlainText()
+        specification_path = self.path_to_spec_field.toPlainText()
+
         if self.serch_in_folder_radio_button.isChecked():
-            if not search_path:
-                self.send_error('Укажите папку с чертежамиили')
-                return
-
-            draw_list = self.check_search_path(search_path)
-            if not draw_list:
-                return
-
-            self.list_widget.clear()
-            self.calculate_step(len(draw_list), filter_only=True)
-            if self.progress_step:
-                self.start_filter_thread(draw_list)
-            else:
-                self.send_error('Обновление завершено')
-                self.list_widget.fill_list(draw_list=draw_list)
+            self.fill_list_widget_with_paths(search_path)
         else:
-            specification_path = self.path_to_spec_field.toPlainText()
             if not search_path:
-                self.send_error('Укажите папку с чертежамиили файл .json')
-                return
-            if not specification_path:
-                self.send_error('Укажите файл спецификации')
+                self.send_error('Укажите папку для создания базы чертежей или файл с расшерением .json')
                 return
             is_spec_path_set = self.set_specification_path(specification_path)
             if not is_spec_path_set:
                 return
-            self.get_data_base(refresh=refresh)
+            self.get_data_base(search_path, refresh=refresh)
 
-    def apply_filters(self, draw_list=None, filter_only=True):
+    def is_filters_required(self) -> bool:
         # If refresh button is clicked then all files will be filtered anyway
         # If merger button is clicked then script checks if files been already filtered,
         # and filter settings didn't change
         # If nothing changed script skips this step
-        if self.is_filters_required():
-            self.start_filter_thread(draw_list, filter_only)
-
-    def is_filters_required(self) -> bool:
         filters = self.settings_window_data.filters
         if filters is None:
             return False
         return filters != self.previous_filters or self.search_path != self.source_of_draws_field.toPlainText()
 
-    def start_filter_thread(self, draw_list=None, filter_only=True):
-        draw_list = draw_list or self.list_widget.get_items_text_data()
+    def start_filter_thread(self, callback: Callable, draw_paths: list[FilePath] = None, filter_only=True):
+        draw_paths = draw_paths or self.list_widget.get_items_text_data()
         self.previous_filters = self.settings_window_data.filters
         thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
 
-        self.filter_thread = FilterThread(draw_list, self.settings_window_data.filters, thread_api, filter_only)
+        self.filter_thread = FilterThread(draw_paths, self.settings_window_data.filters, thread_api, filter_only)
         self.filter_thread.status.connect(self.status_bar.showMessage)
         self.filter_thread.increase_step.connect(self.increase_step)
-        self.filter_thread.finished.connect(self.handle_filter_results)
+        self.filter_thread.finished.connect(callback)
         self.filter_thread.start()
 
     def handle_filter_results(self, draw_list, errors_list: list[str], filter_only=True):
@@ -588,14 +572,14 @@ class UiMerger(WidgetBuilder):
         else:
             self.start_merge_process(draw_list)
 
-    def check_data_base_file(self, filename):
-        if not os.path.exists(filename):
+    def check_data_base_file(self, file_path: FilePath):
+        if not os.path.exists(file_path):
             self.send_error('Указан несуществующий путь')
             return
-        if not filename.endswith('.json'):
+        if not file_path.endswith('.json'):
             self.send_error('Указанный файл не является файлом .json')
             return None
-        with open(filename) as file:
+        with open(file_path) as file:
             try:
                 self.data_base_file = json.load(file)
             except json.decoder.JSONDecodeError:
@@ -607,7 +591,7 @@ class UiMerger(WidgetBuilder):
             else:
                 return 1
 
-    def get_all_files_in_folder(self, search_path=None):
+    def get_all_draw_paths_in_folder(self, search_path: str = None) -> list[FilePath]:
         search_path = search_path or self.search_path
         draw_list = []
         except_folders_list = self.settings_window_data.except_folders_list
@@ -631,7 +615,7 @@ class UiMerger(WidgetBuilder):
         else:
             self.send_error('Нету файлов .cdw или .spw, в выбраной папке(ах) с указанными параметрами')
 
-    def get_files_in_one_folder(self, folder: FilePath):
+    def get_files_in_one_folder(self, folder: str):
         # sorting in the way so specification sheet is the first if .cdw and .spw files has the same name
         draw_list = [os.path.splitext(file_path) for file_path in os.listdir(folder)
                      if os.path.splitext(file_path)[1] in self.kompas_ext]
@@ -682,10 +666,11 @@ class UiMerger(WidgetBuilder):
         if not draws_list:
             self.send_error('Нету файлов для слития')
             return
-        self.calculate_step(len(draws_list))
+        self.calculate_progress_step(len(draws_list))
         self.switch_button_group(False)
         if self.is_filters_required():
-            self.start_filter_thread(draws_list, filter_only=False)  # at the end this method call this function again
+            self.start_filter_thread(self.handle_filter_results, draws_list, filter_only=False)
+            # at the end this method call this function again
         else:
             self.start_merge_process(draws_list)
 
@@ -771,7 +756,7 @@ class UiMerger(WidgetBuilder):
             )
             self.choose_folder_button.setText("Выбор папки для\n создания базы чертежей")
 
-    def calculate_step(self, number_of_files, filter_only=False, get_data_base=False):
+    def calculate_progress_step(self, number_of_files, filter_only=False, get_data_base=False):
         self.current_progress = 0
         self.progress_step = 0
         number_of_operations = 0
@@ -802,52 +787,49 @@ class UiMerger(WidgetBuilder):
         self.choose_data_base_button.setEnabled(switch)
         self.choose_specification_button.setEnabled(switch)
 
-    def get_data_base(self, files=None, refresh=False):
-        if files:
-            self.get_data_base_from_folder(files)
-        elif self.source_of_draws_field.toPlainText():
-            filename = self.source_of_draws_field.toPlainText()
-            if os.path.isdir(filename):
-                files = self.check_search_path(filename)
-                if files:
-                    self.get_data_base_from_folder(files, refresh)
-            else:
-                self.load_data_base(filename, refresh)
+    def get_data_base(self, source_of_draw_path, refresh=False):
+        if os.path.isdir(source_of_draw_path):
+            if draw_list := self.proceed_folder_search_path(source_of_draw_path):
+                self.get_data_base_from_folder(draw_list, refresh)
         else:
-            self.send_error('Укажите папку для поиска файлов')
+            self.load_data_base(source_of_draw_path, refresh)
 
-    def get_data_base_from_folder(self, files, refresh=False):
-        self.calculate_step(len(files), get_data_base=True)
+    def get_data_base_from_folder(self, draw_paths: list[FilePath], refresh=False):
+        self.calculate_progress_step(len(draw_paths), get_data_base=True)
         kompas_thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
 
-        self.data_base_thread = DataBaseThread(files, refresh, kompas_thread_api)
+        self.data_base_thread = DataBaseThread(draw_paths, refresh, kompas_thread_api)
         self.data_base_thread.buttons_enable.connect(self.switch_button_group)
-        self.data_base_thread.calculate_step.connect(self.calculate_step)
+        self.data_base_thread.calculate_step.connect(self.calculate_progress_step)
+        self.data_base_thread.errors.connect(self.send_error)
         self.data_base_thread.status.connect(self.status_bar.showMessage)
         self.data_base_thread.progress_bar.connect(self.progress_bar.setValue)
         self.data_base_thread.increase_step.connect(self.increase_step)
-        self.data_base_thread.finished.connect(self.handle_data_base_results)
+        self.data_base_thread.finished.connect(self.handle_data_base_creation_thread)
 
         self.data_base_thread.start()
 
-    def handle_data_base_results(
+    def handle_data_base_creation_thread(
             self,
-            data_base: dict[str, list[str]],
+            data_base: dict[DrawObozn, list[FilePath]],
             errors_list: list[str],
             refresh=False
     ):
         self.progress_bar.setValue(0)
         self.status_bar.showMessage('Завершено получение Базы Чератежей')
 
-        if data_base:
-            self.data_base_file = data_base
-            self.save_data_base()
-            self.get_paths_to_specifications(refresh)
-        else:
+        if not data_base:
             self.send_error('Нету файлов с обозначением в штампе')
+            return
+
         if errors_list:
             self.missing_list = errors_list
             self.print_out_errors(ErrorType.FILE_NOT_OPENED)
+
+        self.data_base_file = data_base
+        self.save_data_base()
+        if self.specification_path:
+            self.get_paths_to_specifications(refresh)
 
     def save_data_base(self):
         choice = QtWidgets.QMessageBox.question(
@@ -867,16 +849,15 @@ class UiMerger(WidgetBuilder):
             self.save_data_base_file_button.setEnabled(True)
 
     def apply_data_base_save(self):
-        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
-        if filename:
+        data_base_path = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
+        if data_base_path:
             try:
-                with open(filename, 'w') as file:
+                with open(data_base_path, 'w') as file:
                     json.dump(self.data_base_file, file, ensure_ascii=False)
             except:
                 self.send_error("В базе чертежей имеются ошибки")
                 return
-            self.source_of_draws_field.setText(filename)
-            self.search_path = filename
+            self.set_search_path(data_base_path)
         if self.save_data_base_file_button.isEnabled():
             QtWidgets.QMessageBox.information(
                 self,
@@ -892,17 +873,16 @@ class UiMerger(WidgetBuilder):
             filetypes=(("Json file", "*.json"),)
         )
         if file_path:
-            self.load_data_base(file_path)
+            self.load_data_base(FilePath(file_path))
         else:
             self.send_error('Файл с базой не выбран .json')
 
-    def load_data_base(self, filename, refresh=False):
-        filename = filename or self.search_path
+    def load_data_base(self, file_path: FilePath, refresh=False):
+        filename = file_path or self.search_path
         response = self.check_data_base_file(filename)
         if not response:
             return
-        self.search_path = filename
-        self.source_of_draws_field.setText(filename)
+        self.set_search_path(filename)
         self.get_paths_to_specifications(refresh)
 
 
@@ -975,7 +955,6 @@ class MergeThread(QThread):
         self.buttons_enable.emit(True)
         self.progress_bar.emit(0)
         self.kill_thread.emit()
-
 
     def select_save_folder(self) -> FilePath | None:
         # If request folder from this thread later when trying to retrieve kompas api
@@ -1176,105 +1155,144 @@ class DataBaseThread(QThread):
     progress_bar = pyqtSignal(int)
     calculate_step = pyqtSignal(int, bool, bool)
     buttons_enable = pyqtSignal(bool)
+    errors = pyqtSignal(str)
 
-    def __init__(self, draw_list, refresh, kompas_thread_api: ThreadKompasAPI):
-        self.draw_list = draw_list
+    def __init__(self, draw_paths: list[FilePath], refresh: bool, kompas_thread_api: ThreadKompasAPI):
+        self.draw_paths = draw_paths
         self.refresh = refresh
-        self.files_dict: dict[str, list[str]] = {}
-        self.errors_list: list[str] = []
-
         self.kompas_thread_api = kompas_thread_api
-        self._kompas_api: KompasAPI = None
+
+        self.draws_data_base: dict[DrawObozn, [list[FilePath]]] = {}
+        self.errors_list: list = []
+        self._kompas_api: KompasAPI | None = None
         QThread.__init__(self)
 
     def run(self):
+        pythoncom.CoInitializeEx(0)
+        self.shell = win32com.client.gencache.EnsureDispatch('Shell.Application', 0)  # подлкючаемся к винде
+
         self.buttons_enable.emit(False)
-        self._kompas_api = KompasAPI(self.kompas_thread_api)
-        self.create_data_base()
+        obozn_meta_number = self._get_meta_obozn_number(os.path.dirname(self.draw_paths[0]))
+        if not obozn_meta_number:
+            self.errors.emit("Ошибка при создания базы чертежей")
+            return
+
+        self._kompas_api = KompasAPI(self.kompas_thread_api)  # нужно создовать именно в run для правильной работы
+        self._create_data_base(obozn_meta_number)
+
         self.progress_bar.emit(0)
-        self.check_double_files()
+        if double_paths_list := self._get_list_of_paths_with_extra_obozn():
+            self._proceed_double_paths(double_paths_list)
+
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
-        self.finished.emit(self.files_dict, self.errors_list, self.refresh)
+        self.finished.emit(self.draws_data_base, self.errors_list, self.refresh)
 
-    def create_data_base(self):
-        pythoncom.CoInitializeEx(0)
-        shell = win32com.client.gencache.EnsureDispatch('Shell.Application', 0)  # подлкючаемся к винде
-        dir_obj = shell.NameSpace(os.path.dirname(self.draw_list[0]))  # получаем объект папки виндовс шелл
-        for x in range(355):
-            cur_meta = dir_obj.GetDetailsOf(None, x)
-            if cur_meta == 'Обозначение':
-                meta_obozn = x  # присваиваем номер метаданных
-                break
+    def _get_meta_obozn_number(self, dir_name: str) -> int | None:
+        dir_obj = self.shell.NameSpace(dir_name)  # получаем объект папки виндовс шелл
+        for number in range(355):
+            if dir_obj.GetDetailsOf(None, number) == 'Обозначение':
+                return number
 
-        for file in self.draw_list:
-            self.status.emit(f'Получение атрибутов {file}')
+    def _create_data_base(self, meta_obozn_number: int):
+        for draw_path in self.draw_paths:
+            self.status.emit(f'Получение атрибутов {draw_path}')
             self.increase_step.emit(True)
-            dir_obj = shell.NameSpace(os.path.dirname(file))  # получаем объект папки виндовс шелл
-            item = dir_obj.ParseName(os.path.basename(file))  # указатель на файл (делаем именно объект винд шелл)
-            doc_obozn = dir_obj.GetDetailsOf(item, meta_obozn).replace('$', '').\
-                replace('|', '').replace(' ', '').strip().lower()
-            # читаем обозначение мимо компаса, для увелечения скорости
-            # doc_name = dir_obj.GetDetailsOf(item, meta_name)  # читаем наименование мимо компаса
-            if doc_obozn:
-                if doc_obozn not in self.files_dict.keys():  # если обозначения нет в списке
-                    self.files_dict[doc_obozn] = [file]  # добавляем данные документа в основной словарь
+            if draw_obozn := self._fetch_draw_obozn(draw_path, meta_obozn_number):
+                if draw_obozn in self.draws_data_base.keys():
+                    self.draws_data_base[draw_obozn].append(draw_path)
                 else:
-                    self.files_dict[doc_obozn].append(file)
+                    self.draws_data_base[draw_obozn] = [draw_path]
 
-    def check_double_files(self):
-        double_files = [(key, [i for i in v if i.endswith('cdw')], [i for i in v if i.endswith('spw')])
-                        for key, v in self.files_dict.items() if len(v) > 1]
-        if any(len(i[1]) > 1 or len(i[2]) > 1 for i in double_files):
-            self.status.emit(f'Открытие Kompas')
-            sum_len = len(double_files)
-            self.calculate_step.emit(sum_len, False, True)
-            for key, cdw_files, spw_files in double_files:
-                temp_files = []
-                self.increase_step.emit(True)
+    def _fetch_draw_obozn(self, draw_path: FilePath, meta_obozn_number: int) -> DrawObozn:
+        dir_obj = self.shell.NameSpace(os.path.dirname(draw_path))  # получаем объект папки виндовс шелл
+        item = dir_obj.ParseName(os.path.basename(draw_path))  # указатель на файл (делаем именно объект винд шелл)
+        draw_obozn = dir_obj.GetDetailsOf(item, meta_obozn_number).replace('$', '').replace('|', ''). \
+            replace(' ', '').strip().lower()  # читаем обозначение мимо компаса, для увелечения скорости
+        return draw_obozn
 
-                if len(cdw_files) > 1:
-                    self.files_dict[key] = [i for i in self.files_dict[key] if i.endswith('spw')]
-                    path = self.get_right_path(cdw_files)
-                    temp_files = [path]
+    def _get_list_of_paths_with_extra_obozn(self) -> list[DoublePathsData]:
+        def filter_paths_by_extension(file_extension: str) -> list[FilePath]:
+            return list(filter(lambda path: path.endswith(file_extension), paths))
 
-                if len(spw_files) > 1:
-                    self.files_dict[key] = [i for i in self.files_dict[key] if i.endswith('cdw')]
-                    path = self.get_right_path(spw_files)
-                    temp_files.append(path)
-                if key in self.files_dict.keys():
-                    self.files_dict[key].extend(temp_files)
-                else:
-                    self.files_dict[key] = temp_files
+        list_of_double_paths: list[DoublePathsData] = []
+        for draw_obozn, paths in self.draws_data_base.items():
+            if len(paths) < 2:
+                continue
+            list_of_double_paths.append(DoublePathsData(
+                draw_obozn=draw_obozn,
+                cdw_paths=filter_paths_by_extension("cdw"),
+                spw_paths=filter_paths_by_extension("spw"))
+            )
+        return list_of_double_paths
 
-    def get_right_path(self, same_double_paths):
-        # Сначала сравнивает даты в штампе если они равны
-        # Считывает дату создания и выбирает наиболее раннюю версию
-        temp_dict = {}
-        max_date_in_stamp = 0
-        for path in same_double_paths:
-            self.status.emit(f'Сравнение даты для {path}')
+    def _proceed_double_paths(self, double_paths_list: list[DoublePathsData]):
+        """
+            При создании чертежей возможно их дублирование в базе, данный код проверяет наличие таких чертежей
+        """
+        def create_output_error_list() -> list[tuple[DrawObozn, FilePath]]:
+            # для группировки сообщений при последущей печати
+            return [(path_data.draw_obozn, path) for path in path_data.cdw_paths + path_data.spw_paths]
+
+        self.status.emit(f"Открытие Kompas")
+
+        self.calculate_step.emit(len(double_paths_list), False, True)
+
+        for path_data in double_paths_list:
+            self.status.emit(f"Обработка путей для {path_data.draw_obozn}")
+            self.increase_step.emit(True)
+
+            correct_paths: list[FilePath] = []
+            for draw_paths in [path_data.cdw_paths, path_data.spw_paths]:
+                if not draw_paths:
+                    continue
+
+                if not self._confirm_same_draw_name_and_obozn(draw_paths):
+                    self.errors_list.extend(create_output_error_list())
+                    del self.draws_data_base[path_data.draw_obozn]
+                    break
+                correct_paths.append(self._get_right_path(draw_paths))
+
+            self.draws_data_base[path_data.draw_obozn] = correct_paths
+
+    @staticmethod
+    def _confirm_same_draw_name_and_obozn(draw_paths: list[FilePath]) -> bool:
+        file_names = set([os.path.basename(file_path).replace(" ", '').lower().strip() for file_path in draw_paths])
+        if len(file_names) > 1:
+            return False
+        return True
+
+    def _get_right_path(self, file_paths: list[FilePath]) -> FilePath:
+        """
+            Сначала сравнивает даты в штампе  и выбираем самый поздний.
+            Если они равны считывает дату создания и выбирает наиболее раннюю версию
+        """
+        if len(file_paths) < 2:
+            return file_paths[0]
+
+        draws_data: list[list[FilePath, int, int]] = []
+        for path in file_paths:
             try:
                 with self._kompas_api.get_draw_stamp(path) as draw_stamp:
-                    date_in_stamp = draw_stamp.Text(StampCell.CONSTRUCTOR_DATE_CELL).Str
-                    try:
-                        date_in_stamp = utils.date_to_seconds(date_in_stamp)
-                    except:
-                        date_in_stamp = 0
-                    if date_in_stamp >= max_date_in_stamp:
-                        if date_in_stamp > max_date_in_stamp:
-                            max_date_in_stamp = date_in_stamp
-                            temp_dict = {}
-
-                        date_of_creation = os.stat(path).st_ctime
-                        temp_dict[path] = date_of_creation
+                    stamp_time_of_creation = self._get_stamp_time_of_creation(draw_stamp)
+                    file_date_of_creation = os.stat(path).st_ctime
+                    draws_data.append([path, stamp_time_of_creation, file_date_of_creation])
             except DocNotOpened:
                 self.errors_list.append(
                     f'Не удалось открыть файл {path} возможно файл создан в более новой версии или был перемещен\n'
                 )
+        sorted_paths = sorted(draws_data, key=lambda draw_data: (-draw_data[1], draw_data[2]))
+        return sorted_paths[0][0]
 
-        sorted_paths = sorted(temp_dict, key=temp_dict.get)
-        return sorted_paths[0]
+    @staticmethod
+    def _get_stamp_time_of_creation(draw_stamp) -> int:
+        date_in_stamp = draw_stamp.Text(StampCell.CONSTRUCTOR_DATE_CELL).Str
+        try:
+            date_in_stamp = utils.date_to_seconds(date_in_stamp)
+        except Exception:
+            date_in_stamp = 0
+        return date_in_stamp
+
 
 
 class SearchPathsThread(QThread):
@@ -1373,7 +1391,7 @@ class SearchPathsThread(QThread):
             else:  # Specification paths
                 self.fill_draw_list_from_specification(section_data, spec_path=spec_path)
 
-    def get_cdw_paths_from_specification(self, section_data: SpecSectionData, spec_path: FilePath,) -> list[FilePath]:
+    def get_cdw_paths_from_specification(self, section_data: SpecSectionData, spec_path: FilePath, ) -> list[FilePath]:
         draw_paths = []
         for draw_data in section_data.draw_names:
             draw_file_path = FilePath(self.fetch_draw_path_from_data_base(
