@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-import itertools
 import json
 import os
 import queue
@@ -9,7 +8,6 @@ import shutil
 import sys
 import time
 from collections import defaultdict
-from enum import Enum
 from operator import itemgetter
 from tkinter import filedialog
 from typing import BinaryIO, Callable
@@ -23,13 +21,13 @@ from PyQt5.QtCore import QThread, pyqtSignal
 from win32com.client import Dispatch
 
 import kompas_api
-import schemas
 import utils
 from kompas_api import StampCell, DocNotOpened, NoExecutions, NotSupportedSpecType, CoreKompass, Converter, KompasAPI, \
     SpecPathChecker, OboznSearcher
 from pop_up_windows import SettingsWindow, RadioButtonsWindow, SaveType, Filters
-from schemas import DrawData, DrawType, DrawObozn, SpecSectionData, DrawExecution, ThreadKompasAPI, DoublePathsData
-from utils import FilePath, FILE_NOT_EXISTS_MESSAGE, DrawOboznCreation
+from schemas import DrawData, DrawType, DrawObozn, SpecSectionData, DrawExecution, ThreadKompasAPI, DoublePathsData, \
+    ErrorType
+from utils import FilePath, FILE_NOT_EXISTS_MESSAGE, DrawOboznCreation, ErrorsPrinter
 from widgets_tools import WidgetBuilder, MainListWidget, WidgetStyles
 
 FILE_NOT_CHOSEN_MESSAGE = "Not_chosen"
@@ -50,11 +48,6 @@ class SpecificationEmpty(Exception):
 
 class DifferentDrawsForSameObozn(Exception):
     pass
-
-
-class ErrorType(Enum):
-    FILE_MISSING = 1
-    FILE_NOT_OPENED = 2
 
 
 class UiMerger(WidgetBuilder):
@@ -445,57 +438,27 @@ class UiMerger(WidgetBuilder):
                     self.list_widget.fill_list(draw_list=self.draw_list)
 
     def print_out_errors(self, error_type: ErrorType) -> str | None:
-        def group_missing_files_info() -> str:
-            grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
-            grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
-            missing_message = '\n'.join(grouped_list)
-            return missing_message
+        def save_errors_message_to_txt():
+            filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
+            if not filename:
+                return
+            try:
+                with open(filename, 'w') as file:
+                    file.write(errors_printer.message_for_file)
+            except Exception:
+                self.send_error("Ошибка записи")
 
-        def create_missing_files_message() -> tuple[str, str]:
-            window_title = "Отсуствующие чертежи"
-            error_message = f"Не были найдены следующи чертежи:\n{missing_message} {''.join(one_line_messages)}" \
-                            f"\nСохранить список?"
-            return window_title, error_message
-
-        def create_file_erorrs_message() -> tuple[str, str]:
-            window_title = "Ошибки при обработке файлов"
-            error_message = f"Были получены следующие ошибки при " \
-                            f"обработке файлов:\n{missing_message} {''.join(one_line_messages)}" \
-                            f"\nСохранить список?"
-            return window_title, error_message
-
-        one_line_messages = []
-        grouped_messages: list[schemas.FileName, DrawObozn] = []
-        for error in self.missing_list:
-            if type(error) == str:
-                one_line_messages.append(error)
-            else:
-                grouped_messages.append(error)
-        missing_message = group_missing_files_info()
-
-        if error_type == ErrorType.FILE_MISSING:
-            title, message = create_missing_files_message()
-        elif error_type == ErrorType.FILE_NOT_OPENED:
-            title, message = create_file_erorrs_message()
+        errors_printer = ErrorsPrinter(self.missing_list, error_type)
+        title, message = errors_printer.create_error_message()
+        self.missing_list = []
 
         choice = QtWidgets.QMessageBox.question(
             self, title, message,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
-
-        self.missing_list = []
         if choice != QtWidgets.QMessageBox.Yes:
             return
-        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
-        if not filename:
-            return
-        try:
-            with open(filename, 'w') as file:
-                file.write(missing_message)
-                file.writelines(one_line_messages)
-        except Exception:
-            self.send_error("Ошибка записи")
-            return
+        save_errors_message_to_txt()
 
     def fill_list_widget_with_paths(self, search_path: str):
         if not search_path:
@@ -547,6 +510,7 @@ class UiMerger(WidgetBuilder):
         self.filter_thread.status.connect(self.status_bar.showMessage)
         self.filter_thread.increase_step.connect(self.increase_step)
         self.filter_thread.finished.connect(callback)
+        self.filter_thread.switch_button_group.connect(self.switch_button_group)
         self.filter_thread.start()
 
     def handle_filter_results(self, draw_list, errors_list: list[str], filter_only=True):
@@ -556,7 +520,6 @@ class UiMerger(WidgetBuilder):
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
             self.list_widget.clear()
-            self.switch_button_group(True)
             return
 
         self.list_widget.clear()
@@ -835,7 +798,7 @@ class UiMerger(WidgetBuilder):
         choice = QtWidgets.QMessageBox.question(
             self,
             'База Чертежей',
-            "Сохранить полученные данные?",
+            "Сохранить полученные данные на жесткйи диск?",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
         if choice == QtWidgets.QMessageBox.Yes:
@@ -883,7 +846,8 @@ class UiMerger(WidgetBuilder):
         if not response:
             return
         self.set_search_path(filename)
-        self.get_paths_to_specifications(refresh)
+        if self.specification_path:
+            self.get_paths_to_specifications(refresh)
 
 
 class MergeThread(QThread):
@@ -1081,6 +1045,7 @@ class FilterThread(QThread):
     finished = pyqtSignal(list, list, bool)
     increase_step = pyqtSignal(bool)
     status = pyqtSignal(str)
+    switch_button_group = pyqtSignal(bool)
 
     def __init__(self, draw_paths_list, filters: Filters, kompas_thread_api: ThreadKompasAPI, filter_only=True):
         self.draw_paths_list = draw_paths_list
@@ -1094,8 +1059,10 @@ class FilterThread(QThread):
 
     def run(self):
         self._kompas_api = KompasAPI(self.kompas_thread_api)
+        self.switch_button_group.emit(False)
         filtered_paths_draw_list = self.filter_draws()
         self.status.emit(f'Закрытие Kompas')
+        self.switch_button_group.emit(True)
         self.finished.emit(filtered_paths_draw_list, self.errors_list, self.filter_only)
 
     def filter_draws(self) -> list[str]:
@@ -1292,7 +1259,6 @@ class DataBaseThread(QThread):
         except Exception:
             date_in_stamp = 0
         return date_in_stamp
-
 
 
 class SearchPathsThread(QThread):

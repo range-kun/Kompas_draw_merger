@@ -24,12 +24,19 @@ class DrawType(IntEnum):
     DETAIL = 20
 
 
-class DrawData(BaseModel):
+class ErrorType(Enum):
+    FILE_MISSING = 1
+    FILE_NOT_OPENED = 2
+
+
+@dataclass
+class DrawData:
     draw_obozn: DrawObozn
     draw_name: DrawName
 
 
-class SpecSectionData(BaseModel):
+@dataclass
+class SpecSectionData:
     draw_type: DrawType
     draw_names: list[DrawData]
 
@@ -40,20 +47,22 @@ class UserSettings(BaseModel):
     checker_list: list[str] | None
     sortament_list: list[str] | None
     watermark_position: list[int]
+    watermark_path: FilePath
     add_default_watermark: bool = True
     split_file_by_size: bool = False
     auto_save_folder: bool = False
-    watermark_path: FilePath
 
 
-class Filters(BaseModel):
+@dataclass
+class Filters:
     date_range: list[int, int] | None = None
     constructor_list: list[str] | None = None
     checker_list: list[str] | None = None
     sortament_list: list[str] | None = None
 
 
-class SettingsData(BaseModel):
+@dataclass
+class SettingsData:
     filters: Filters | None = None
     watermark_path: FilePath | None = None
     watermark_position: list[int] | None = None
