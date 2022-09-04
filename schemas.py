@@ -9,7 +9,7 @@ from pydantic import BaseModel
 FilePath = NewType('FilePath', str)
 FileName = NewType('FileName', str)
 DrawObozn = NewType('DrawObozn', str)
-DrawName = NewType('DrawObozn', str)
+DrawName = NewType('DrawName', str)
 DrawExecution = NewType('DrawExecution', str)
 
 
@@ -32,7 +32,7 @@ class ErrorType(Enum):
 @dataclass
 class DrawData:
     draw_obozn: DrawObozn
-    draw_name: DrawName
+    draw_name: DrawName | None = None
 
 
 @dataclass
@@ -55,7 +55,7 @@ class UserSettings(BaseModel):
 
 @dataclass
 class Filters:
-    date_range: list[int, int] | None = None
+    date_range: list[int] | None = None
     constructor_list: list[str] | None = None
     checker_list: list[str] | None = None
     sortament_list: list[str] | None = None
@@ -63,7 +63,7 @@ class Filters:
 
 @dataclass
 class SettingsData:
-    filters: Filters | None = None
+    filters: Filters = Filters()
     watermark_path: FilePath | None = None
     watermark_position: list[int] | None = None
     split_file_by_size: bool = False

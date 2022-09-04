@@ -59,7 +59,7 @@ class SettingsWindow(QtWidgets.QDialog):
             except_folders_list=self._exclude_folder_list_widget.get_items_text_data(),
         )
 
-    def _collect_date_range_info(self) -> list[int, int] | None:
+    def _collect_date_range_info(self) -> list[int] | None:
         if not self._filter_by_date_check_box.isChecked():
             return None
         date_1 = self._first_date_input.dateTime().toSecsSinceEpoch()
@@ -302,10 +302,10 @@ class SettingsWindow(QtWidgets.QDialog):
                 user_settings = UserSettings.parse_obj(obj)
         except OSError:
             self.construct_class.send_error('Файл settings.txt \n отсутсвует')
-            return
+            return None
         except json.decoder.JSONDecodeError:
             self.construct_class.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
-            return
+            return None
 
         return user_settings
 
