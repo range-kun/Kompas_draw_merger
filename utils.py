@@ -1,11 +1,14 @@
+import itertools
 import os
 import re
 import time
 from datetime import datetime
+from operator import itemgetter
 from pathlib import Path
 
 from kompas_api import fetch_obozn_and_execution
-from schemas import FilePath, FileName, DrawObozn, DrawExecution
+from schemas import FilePath, FileName, DrawObozn, DrawExecution, ErrorType
+from PyQt5 import QtWidgets
 
 FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
 
@@ -182,3 +185,69 @@ class DrawOboznCreation:
         ]
         obozn_list.append(DrawObozn(f"{spec_obozn}{modification_symbol}"))
         return obozn_list
+
+
+class ErrorsPrinter:
+    def __init__(self, missing_list: list, error_type: ErrorType):
+        self._missing_list = missing_list
+        self._error_type = error_type
+        self._message_for_file: str | None = None
+        self._title_for_file: str | None = None
+
+    def create_error_message(self) -> tuple[str, str]:
+        if len(self._missing_list) > 15:
+            return "Печать ошибок",\
+                   "Для выводва на экран количество ошибок слишько велико, хотите сохрнаить отчет в текстовый файл?"
+        return self.proceed_errors_list()
+
+    @property
+    def message_for_file(self) -> str:
+        if self._message_for_file is None:
+            _, self._message_for_file = self.proceed_errors_list()
+        return self._message_for_file
+
+    def proceed_errors_list(self) -> tuple[str, str]:
+        one_line_messages, grouped_messages = self._sort_messages_by_type()
+        missing_message = self._group_missing_files_info(grouped_messages)
+        if self._error_type == ErrorType.FILE_MISSING:
+            title, message = self._create_missing_files_message(missing_message, one_line_messages)
+        elif self._error_type == ErrorType.FILE_NOT_OPENED:
+            title, message = self._create_file_erorrs_message(missing_message, one_line_messages)
+        else:
+            raise NotImplementedError
+        self._title_for_file, self._message_for_file = title, message
+
+        return title, message
+
+    def _sort_messages_by_type(self) -> tuple[list[str], list[FileName, DrawObozn]]:
+        one_line_messages = []
+        grouped_messages: list[FileName, DrawObozn] = []
+        for error in self._missing_list:
+            if type(error) == str:
+                one_line_messages.append(error)
+            else:
+                grouped_messages.append(error)
+
+        return one_line_messages, grouped_messages
+
+    @staticmethod
+    def _group_missing_files_info(grouped_messages) -> str:
+        grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
+        grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
+        missing_message = '\n'.join(grouped_list)
+        return missing_message
+
+    @staticmethod
+    def _create_missing_files_message(missing_message, one_line_messages) -> tuple[str, str]:
+        window_title = "Отсуствующие чертежи"
+        error_message = f"Не были найдены следующи чертежи:\n{missing_message} {''.join(one_line_messages)}" \
+                        f"\nСохранить список?"
+        return window_title, error_message
+
+    @staticmethod
+    def _create_file_erorrs_message(missing_message, one_line_messages) -> tuple[str, str]:
+        window_title = "Ошибки при обработке файлов"
+        error_message = f"Были получены следующие ошибки при " \
+                        f"обработке файлов:\n{missing_message} {''.join(one_line_messages)}" \
+                        f"\nСохранить список?"
+        return window_title, error_message
