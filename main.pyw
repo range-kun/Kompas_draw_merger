@@ -132,7 +132,7 @@ class UiMerger(WidgetBuilder):
             text='Выбор файла\n с базой чертежей',
             font=self.arial_12_font,
             enabled=False,
-            command=self.get_data_base_path
+            command=self.select_data_base_file_path
         )
         self.grid_layout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
@@ -335,13 +335,13 @@ class UiMerger(WidgetBuilder):
         if self.serch_in_folder_radio_button.isChecked():
             self.fill_list_widget_with_paths(search_path=directory_path)
         else:
-            self.get_data_base(directory_path)
+            self.proceed_database_source_path(directory_path)
 
     def set_search_path(self, path: FilePath):
         self.search_path = path
         self.source_of_draws_field.setText(path)
 
-    def proceed_folder_search_path(self, folder_path: str):
+    def proceed_folder_draw_list_search(self, folder_path: str):
         if draw_list := self.get_all_draw_paths_in_folder(folder_path):
             self.search_path = FilePath(folder_path)
             self.source_of_draws_field.setText(folder_path)
@@ -359,11 +359,11 @@ class UiMerger(WidgetBuilder):
             return
 
         self.path_to_spec_field.setText(spec_path)
-        if cdw_file := self.source_of_draws_field.toPlainText():
-            if cdw_file == self.search_path and self.data_base_file:
+        if source_path := self.source_of_draws_field.toPlainText():
+            if source_path == self.search_path and self.data_base_file:
                 self.get_paths_to_specifications()
             else:
-                self.get_data_base(cdw_file)
+                self.proceed_database_source_path(source_path)
 
     def set_specification_path(self, spec_path: FilePath):
         if not spec_path:
@@ -465,12 +465,12 @@ class UiMerger(WidgetBuilder):
             return
         save_errors_message_to_txt()
 
-    def fill_list_widget_with_paths(self, search_path: FilePath):
+    def fill_list_widget_with_paths(self, search_path: str):
         if not search_path:
             self.send_error('Укажите папку с чертежамиили')
             return
 
-        draw_list = self.proceed_folder_search_path(search_path)
+        draw_list = self.proceed_folder_draw_list_search(search_path)
         if not draw_list:
             return
 
@@ -494,7 +494,7 @@ class UiMerger(WidgetBuilder):
             is_spec_path_set = self.set_specification_path(specification_path)
             if not is_spec_path_set:
                 return
-            self.get_data_base(search_path, refresh=refresh)
+            self.proceed_database_source_path(search_path, refresh=refresh)
 
     def is_filters_required(self) -> bool:
         # If refresh button is clicked then all files will be filtered anyway
@@ -539,25 +539,6 @@ class UiMerger(WidgetBuilder):
             return
         else:
             self.start_merge_process(draw_list)
-
-    def check_data_base_file(self, file_path: FilePath):
-        if not os.path.exists(file_path):
-            self.send_error('Указан несуществующий путь')
-            return
-        if not file_path.endswith('.json'):
-            self.send_error('Указанный файл не является файлом .json')
-            return None
-        with open(file_path) as file:
-            try:
-                self.data_base_file = json.load(file)
-            except json.decoder.JSONDecodeError:
-                self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
-                return None
-            except UnicodeDecodeError:
-                self.send_error('Указана неверная кодировка файл, попытайтесь еще раз сгенерировать данные')
-                return None
-            else:
-                return 1
 
     def get_all_draw_paths_in_folder(self, search_path: str) -> list[FilePath] | None:
         draw_list = []
@@ -754,12 +735,12 @@ class UiMerger(WidgetBuilder):
         self.choose_data_base_button.setEnabled(switch)
         self.choose_specification_button.setEnabled(switch)
 
-    def get_data_base(self, source_of_draw_path, refresh=False):
+    def proceed_database_source_path(self, source_of_draw_path: str | FilePath, refresh=False):
         if os.path.isdir(source_of_draw_path):
-            if draw_list := self.proceed_folder_search_path(source_of_draw_path):
+            if draw_list := self.proceed_folder_draw_list_search(source_of_draw_path):
                 self.get_data_base_from_folder(draw_list, refresh)
         else:
-            self.load_data_base(source_of_draw_path, refresh)
+            self.search_paths_by_data_base_file(FilePath(source_of_draw_path), refresh)
 
     def get_data_base_from_folder(self, draw_paths: list[FilePath], refresh=False):
         self.calculate_progress_step(len(draw_paths), get_data_base=True)
@@ -794,11 +775,11 @@ class UiMerger(WidgetBuilder):
             self.print_out_errors(ErrorType.FILE_NOT_OPENED)
 
         self.data_base_file = data_base
-        self.save_data_base()
+        self.choose_database_storage_method()
         if self.specification_path:
             self.get_paths_to_specifications(refresh)
 
-    def save_data_base(self):
+    def choose_database_storage_method(self):
         choice = QtWidgets.QMessageBox.question(
             self,
             'База Чертежей',
@@ -806,16 +787,16 @@ class UiMerger(WidgetBuilder):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
         if choice == QtWidgets.QMessageBox.Yes:
-            self.apply_data_base_save()
+            self.save_database_to_disk()
         else:
             QtWidgets.QMessageBox.information(
                 self,
                 'Отмена записи',
-                'Данные о связях хранятся в памяти'
+                'База хранится в памяти и будет использована только для текущего запуска'
             )
             self.save_data_base_file_button.setEnabled(True)
 
-    def apply_data_base_save(self):
+    def save_database_to_disk(self):
         data_base_path = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
         if data_base_path:
             try:
@@ -824,7 +805,7 @@ class UiMerger(WidgetBuilder):
             except:
                 self.send_error("В базе чертежей имеются ошибки")
                 return
-            self.set_search_path(data_base_path)
+            self.set_search_path(FilePath(data_base_path))
         if self.save_data_base_file_button.isEnabled():
             QtWidgets.QMessageBox.information(
                 self,
@@ -833,24 +814,43 @@ class UiMerger(WidgetBuilder):
             )
             self.save_data_base_file_button.setEnabled(False)
 
-    def get_data_base_path(self):
+    def select_data_base_file_path(self):
         file_path = filedialog.askopenfilename(
             initialdir="",
             title="Загрузить файл",
             filetypes=(("Json file", "*.json"),)
         )
         if file_path:
-            self.load_data_base(FilePath(file_path))
+            self.search_paths_by_data_base_file(FilePath(file_path))
         else:
             self.send_error('Файл с базой не выбран .json')
 
-    def load_data_base(self, file_path: FilePath, refresh=False):
-        response = self.check_data_base_file(file_path)
+    def search_paths_by_data_base_file(self, file_path: FilePath, refresh=False):
+        response = self.load_data_base_file(file_path)
         if not response:
             return
         self.set_search_path(file_path)
         if self.specification_path:
             self.get_paths_to_specifications(refresh)
+
+    def load_data_base_file(self, file_path: FilePath):
+        if not os.path.exists(file_path):
+            self.send_error('Указан несуществующий путь')
+            return
+        if not file_path.endswith('.json'):
+            self.send_error('Указанный файл не является файлом .json')
+            return None
+        with open(file_path) as file:
+            try:
+                self.data_base_file = json.load(file)
+            except json.decoder.JSONDecodeError:
+                self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
+                return None
+            except UnicodeDecodeError:
+                self.send_error('Указана неверная кодировка файл, попытайтесь еще раз сгенерировать данные')
+                return None
+            else:
+                return 1
 
 
 class MergeThread(QThread):
