@@ -29,6 +29,11 @@ class WidgetStyles:
         self.arial_12_font.setFamily("Arial")
         self.arial_12_font.setPointSize(12)
 
+        self.arial_12_font_bold = QtGui.QFont()
+        self.arial_12_font.setFamily("Arial")
+        self.arial_12_font.setPointSize(12)
+        self.arial_12_font_bold.setBold(True)
+
         self.ms_shell_12_font = QtGui.QFont()
         self.ms_shell_12_font.setFamily("MS Shell Dlg 2")
         self.ms_shell_12_font.setPointSize(12)

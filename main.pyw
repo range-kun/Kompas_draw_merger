@@ -8,7 +8,6 @@ import shutil
 import sys
 import time
 from collections import defaultdict
-from operator import itemgetter
 from tkinter import filedialog
 from typing import BinaryIO, Callable
 
@@ -22,11 +21,10 @@ from PyQt5.QtCore import QThread, pyqtSignal
 import kompas_api
 import schemas
 import utils
-from kompas_api import StampCell, DocNotOpened, NoExecutions, NotSupportedSpecType, CoreKompass, Converter, KompasAPI, \
+from kompas_api import StampCell, NoExecutions, NotSupportedSpecType, CoreKompass, Converter, KompasAPI, \
     SpecPathChecker, OboznSearcher
 from pop_up_windows import SettingsWindow, RadioButtonsWindow, SaveType, Filters
-from schemas import DrawData, DrawType, DrawObozn, SpecSectionData, DrawExecution, ThreadKompasAPI, DoublePathsData, \
-    ErrorType
+from schemas import DrawObozn, SpecSectionData, DrawExecution, ThreadKompasAPI, DoublePathsData, ErrorType
 from utils import FilePath, FILE_NOT_EXISTS_MESSAGE, DrawOboznCreation, ErrorsPrinter
 from widgets_tools import WidgetBuilder, MainListWidget, WidgetStyles
 
@@ -55,9 +53,9 @@ class NoDraws(Exception):
 
 
 class UiMerger(WidgetBuilder):
-    def __init__(self, kompas_api: CoreKompass):
+    def __init__(self, _kompas_api: CoreKompass):
         WidgetBuilder.__init__(self, parent=None)
-        self.kompas_api = kompas_api
+        self.kompas_api = _kompas_api
         self.setFixedSize(929, 646)
         self.setWindowTitle("Конвертер")
 
@@ -115,6 +113,7 @@ class UiMerger(WidgetBuilder):
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
 
         self.arial_12_font = self.style_class.arial_12_font
+        self.arial_12_font_bold = self.style_class.arial_12_font_bold
         self.arial_11_font = self.style_class.arial_11_font
 
         self.line_edit_size_policy = self.style_class.line_edit_size_policy
@@ -162,7 +161,7 @@ class UiMerger(WidgetBuilder):
 
         self.path_to_spec_field = self.make_text_edit(
             font=self.arial_11_font,
-            placeholder="Укажите путь до файла со спецификацией .sdw",
+            placeholder="Укажите путь до файла со спецификацией .spw",
             size_policy=self.line_edit_size_policy
         )
         self.path_to_spec_field.setEnabled(False)
@@ -312,7 +311,7 @@ class UiMerger(WidgetBuilder):
 
         self.merge_files_button = self.make_button(
             text="Склеить файлы",
-            font=self.arial_12_font,
+            font=self.arial_12_font_bold,
             command=self.check_merge_changes
 
         )
@@ -1131,7 +1130,7 @@ class FilterThread(QThread):
                         if data_list and not self.filter_file_by_cell_value(data_list, stamp_cell, draw_stamp):
                             file_is_ok = False
                             break
-            except DocNotOpened:
+            except kompas_api.DocNotOpened:
                 self.errors_list.append(
                     f'Не удалось открыть файл {file_path} возможно файл создан в более новой версии или был перемещен\n'
                 )
@@ -1289,7 +1288,7 @@ class DataBaseThread(QThread):
                     stamp_time_of_creation = self._get_stamp_time_of_creation(draw_stamp)
                     file_date_of_creation = os.stat(path).st_ctime
                     draws_data.append((path, stamp_time_of_creation, file_date_of_creation))
-            except DocNotOpened:
+            except kompas_api.DocNotOpened:
                 self.errors_list.append(
                     f'Не удалось открыть файл {path} возможно файл создан в более новой версии или был перемещен\n'
                 )
@@ -1397,7 +1396,7 @@ class SearchPathsThread(QThread):
         # spec_path берется не None если идет рекурсия
         self.status.emit(f'Обработка {os.path.basename(spec_path)}')
         for section_data in obozn_in_specification:
-            if section_data.draw_type in [DrawType.ASSEMBLY_DRAW, DrawType.DETAIL]:
+            if section_data.draw_type in [schemas.DrawType.ASSEMBLY_DRAW, schemas.DrawType.DETAIL]:
                 self.draw_paths.extend(self.get_cdw_paths_from_specification(section_data, spec_path=spec_path))
             else:  # Specification paths
                 self.fill_draw_list_from_specification(section_data, spec_path=spec_path)
@@ -1461,7 +1460,7 @@ class SearchPathsThread(QThread):
 
     def fetch_draw_path_from_data_base(
             self,
-            draw_data: DrawData,
+            draw_data: schemas.DrawData,
             file_extension: str,
             file_path: FilePath) -> FilePath | None:
         draw_obozn, draw_name = draw_data.draw_obozn, draw_data.draw_name
