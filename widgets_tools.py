@@ -229,6 +229,9 @@ class CheckableComboBox(QtWidgets.QComboBox):
 class ListWidget(QtWidgets.QListWidget):
     def __init__(self, parent):
         super().__init__(parent)
+        self.setSelectionMode(
+            QtWidgets.QAbstractItemView.ExtendedSelection
+        )
 
     def fill_list(self, *, draw_list,):
         font = QtGui.QFont()
@@ -253,6 +256,17 @@ class ListWidget(QtWidgets.QListWidget):
     def get_not_selected_items(self):
         items = (self.item(index) for index in range(self.count()) if not self.item(index).checkState())
         return items
+
+    def remove_selected(self):
+        selected_items = self.selectedItems()
+        if not selected_items:
+            return
+        for item in selected_items:
+            self.takeItem(self.row(item))
+
+    # def keyPressEvent(self, event):
+    #     if event.key() == QtCore.Qt.Key_Delete:
+    #         self.remove_selected()
 
 
 class MainListWidget(ListWidget):

@@ -110,7 +110,7 @@ class MergerFolderData:
             main_name = os.path.basename(self._path_to_search)
         return FileName(main_name)
 
-    def _get_current_file_number(self) -> str | None:
+    def _get_current_file_prefix_number(self) -> str:
         # next code check if folder or file with same name exists if so:
         # get maximum number of files and folders and incriminate +1 to name of new file and folder
         try:
@@ -118,14 +118,13 @@ class MergerFolderData:
         except FileNotFoundError:
             return '01'
 
-        prefix_number = \
+        cur_max_prefix_number = \
             max(map(int, re.findall(rf'{self._main_draw_name} - (\d\d)(?= {self._today_date})', string_of_files)),
                 default=0)
-        prefix_number = str(prefix_number + 1) if prefix_number > 8 else '0' + str(prefix_number + 1)
-        return prefix_number
+        return str(cur_max_prefix_number + 1) if cur_max_prefix_number > 8 else '0' + str(cur_max_prefix_number + 1)
 
     def _fetch_single_draw_dir(self) -> FilePath:
-        prefix_number = self._get_current_file_number()
+        prefix_number = self._get_current_file_prefix_number()
         _single_draw_dir = fr'{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}'
         if self._need_to_be_split:
             _single_draw_dir += rf'\{self._single_draw_dir_name}'
@@ -138,7 +137,7 @@ class DrawOboznCreation:
     def __init__(self, draw_obozn: DrawObozn):
         self.draw_obozn = draw_obozn
         self.need_to_verify_path = False
-        self.execution: DrawExecution | None = None
+        self.execution: DrawExecution = DrawExecution("")
 
     @property
     def draw_obozn_list(self) -> list[DrawObozn]:
@@ -163,7 +162,7 @@ class DrawOboznCreation:
 
         db_obozn = self.draw_obozn
         for num in range(1, 4):  # обычно максимальное количество исполнений до -03
-            db_obozn += self.draw_obozn + f"-0{num}{_modification_symbol}"
+            db_obozn += DrawObozn(self.draw_obozn + f"-0{num}{_modification_symbol}")
             spec_obozn_list.append(db_obozn)
         return spec_obozn_list
 
@@ -171,7 +170,7 @@ class DrawOboznCreation:
     def _create_obozn_with_different_executions(
             spec_obozn: DrawObozn,
             execution: DrawExecution,
-            modification_symbol: str
+            modification_symbol: str | None
     ) -> list[DrawObozn]:
         """
             При формировании спецификации в штампе указывается только одна сборка
@@ -179,6 +178,8 @@ class DrawOboznCreation:
             только на чертеже при этом состав и количество деталей не изменно.
             Или может быть групповая спецефикация с одной спекой
         """
+        if modification_symbol is None:
+            modification_symbol = ""
         obozn_list = [
             DrawObozn(f"{spec_obozn}-0{execution_number}" + modification_symbol)
             for execution_number in range(int(execution), 0, -1)
@@ -219,9 +220,9 @@ class ErrorsPrinter:
 
         return title, message
 
-    def _sort_messages_by_type(self) -> tuple[list[str], list[FileName, DrawObozn]]:
+    def _sort_messages_by_type(self) -> tuple[list[str], list[tuple[FileName, DrawObozn]]]:
         one_line_messages = []
-        grouped_messages: list[FileName, DrawObozn] = []
+        grouped_messages: list[tuple[FileName, DrawObozn]] = []
         for error in self._missing_list:
             if type(error) == str:
                 one_line_messages.append(error)
@@ -231,21 +232,20 @@ class ErrorsPrinter:
         return one_line_messages, grouped_messages
 
     @staticmethod
-    def _group_missing_files_info(grouped_messages) -> str:
+    def _group_missing_files_info(grouped_messages: list[tuple[FileName, DrawObozn]]) -> str:
         grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
-        grouped_list = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
-        missing_message = '\n'.join(grouped_list)
-        return missing_message
+        grouped_list_message = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
+        return '\n'.join(grouped_list_message)
 
     @staticmethod
-    def _create_missing_files_message(missing_message, one_line_messages) -> tuple[str, str]:
+    def _create_missing_files_message(missing_message: str, one_line_messages: list[str]) -> tuple[str, str]:
         window_title = "Отсуствующие чертежи"
         error_message = f"Не были найдены следующи чертежи:\n{missing_message} {''.join(one_line_messages)}" \
                         f"\nСохранить список?"
         return window_title, error_message
 
     @staticmethod
-    def _create_file_erorrs_message(missing_message, one_line_messages) -> tuple[str, str]:
+    def _create_file_erorrs_message(missing_message: str, one_line_messages: list[str]) -> tuple[str, str]:
         window_title = "Ошибки при обработке файлов"
         error_message = f"Были получены следующие ошибки при " \
                         f"обработке файлов:\n{missing_message} {''.join(one_line_messages)}" \

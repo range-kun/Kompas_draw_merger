@@ -18,9 +18,9 @@ import win32com
 from PyPDF2 import PdfFileMerger, PdfFileWriter, PdfFileReader
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
-from win32com.client import Dispatch
 
 import kompas_api
+import schemas
 import utils
 from kompas_api import StampCell, DocNotOpened, NoExecutions, NotSupportedSpecType, CoreKompass, Converter, KompasAPI, \
     SpecPathChecker, OboznSearcher
@@ -50,6 +50,10 @@ class DifferentDrawsForSameObozn(Exception):
     pass
 
 
+class NoDraws(Exception):
+    pass
+
+
 class UiMerger(WidgetBuilder):
     def __init__(self, kompas_api: CoreKompass):
         WidgetBuilder.__init__(self, parent=None)
@@ -67,9 +71,9 @@ class UiMerger(WidgetBuilder):
         self.search_path: FilePath | None = None
         self.current_progress = 0
         self.progress_step = 0
-        self.data_queue = queue.Queue()
-        self.missing_list = []
-        self.draw_list = []
+        self.data_queue: queue.Queue = queue.Queue()
+        self.missing_list: list[tuple | str] = []
+        self.draw_list: list[FilePath] = []
 
         self.bypassing_folders_inside_previous_status = True
         self.bypassing_sub_assemblies_previous_status = False
@@ -79,10 +83,14 @@ class UiMerger(WidgetBuilder):
         self.data_base_thread: QThread | None = None
         self.search_path_thread: QThread | None = None
 
-        self.data_base_file: dict[DrawObozn, [list[FilePath]]] | None = None
-        self.specification_path = None
-        self.previous_filters = {}
+        self.data_base_file: dict[DrawObozn, list[FilePath]] = {}
+        self.specification_path: FilePath | None = None
+        self.previous_filters: Filters = Filters()
         self.obozn_in_specification: list[SpecSectionData] = []
+
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Delete:
+            self.change_list_widget_state(self.list_widget.remove_selected)
 
     def setup_ui(self):
         self.setup_styles()
@@ -132,7 +140,7 @@ class UiMerger(WidgetBuilder):
             text='Выбор файла\n с базой чертежей',
             font=self.arial_12_font,
             enabled=False,
-            command=self.get_data_base_path
+            command=self.select_data_base_file_path
         )
         self.grid_layout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
@@ -148,7 +156,7 @@ class UiMerger(WidgetBuilder):
         self.save_data_base_file_button = self.make_button(
             text='Сохранить \n базу чертежей',
             font=self.arial_12_font, enabled=False,
-            command=self.apply_data_base_save
+            command=self.save_database_to_disk
         )
         self.grid_layout.addWidget(self.save_data_base_file_button, 2, 3, 1, 1)
 
@@ -209,12 +217,13 @@ class UiMerger(WidgetBuilder):
         )
         upper_items_list_layout.addWidget(self.refresh_draw_list_button)
 
-        save_items_list = self.make_button(
+        self.save_items_list = self.make_button(
             text='Скопироваты выбранные файлы',
             font=self.arial_12_font,
             command=self.copy_files_from_items_list
         )
-        upper_items_list_layout.addWidget(save_items_list)
+        self.save_items_list.setEnabled(False)
+        upper_items_list_layout.addWidget(self.save_items_list)
 
     def setup_list_widget_section(self):
         horizontal_layout = QtWidgets.QHBoxLayout()
@@ -226,24 +235,33 @@ class UiMerger(WidgetBuilder):
         vertical_layout = QtWidgets.QVBoxLayout()
         horizontal_layout.addLayout(vertical_layout)
 
-        self.move_line_up_button = self.make_button(
+        move_line_up_button = self.make_button(
             text='\n\n',
             size_policy=self.sizepolicy_button_2,
             command=self.list_widget.move_item_up
         )
-        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
-        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
+        move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
+        move_line_up_button.setIconSize(QtCore.QSize(50, 50))
 
-        self.move_line_down_button = self.make_button(
+        move_line_down_button = self.make_button(
             text='\n\n',
             size_policy=self.sizepolicy_button_2,
             command=self.list_widget.move_item_down
         )
-        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
-        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
+        move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
+        move_line_down_button.setIconSize(QtCore.QSize(50, 50))
 
-        vertical_layout.addWidget(self.move_line_up_button)
-        vertical_layout.addWidget(self.move_line_down_button)
+        delete_list_widget_item = self.make_button(
+            text="\n\n",
+            size_policy=self.sizepolicy_button_2,
+            command=lambda: self.change_list_widget_state(self.list_widget.remove_selected)
+        )
+        delete_list_widget_item.setIcon(QtGui.QIcon('img/red_cross.png'))
+        delete_list_widget_item.setIconSize(QtCore.QSize(50, 50))
+
+        vertical_layout.addWidget(move_line_up_button)
+        vertical_layout.addWidget(move_line_down_button)
+        vertical_layout.addWidget(delete_list_widget_item)
 
     def setup_lower_list_buttons(self):
         self.select_all_button = self.make_button(
@@ -260,6 +278,7 @@ class UiMerger(WidgetBuilder):
             size_policy=self.sizepolicy_button
         )
         self.grid_layout.addWidget(self.remove_selection_button, 10, 1, 1, 1)
+        self.switch_select_unselect_buttons(False)
 
         self.add_file_to_list_button = self.make_button(
             text="Добавить файл в список",
@@ -294,7 +313,8 @@ class UiMerger(WidgetBuilder):
         self.merge_files_button = self.make_button(
             text="Склеить файлы",
             font=self.arial_12_font,
-            command=self.merge_files
+            command=self.check_merge_changes
+
         )
         self.grid_layout.addWidget(self.merge_files_button, 13, 0, 1, 4)
 
@@ -335,15 +355,15 @@ class UiMerger(WidgetBuilder):
         if self.serch_in_folder_radio_button.isChecked():
             self.fill_list_widget_with_paths(search_path=directory_path)
         else:
-            self.get_data_base(directory_path)
+            self.proceed_database_source_path(directory_path)
 
-    def set_search_path(self, path: str):
+    def set_search_path(self, path: FilePath):
         self.search_path = path
         self.source_of_draws_field.setText(path)
 
-    def proceed_folder_search_path(self, folder_path: str):
+    def proceed_folder_draw_list_search(self, folder_path: str):
         if draw_list := self.get_all_draw_paths_in_folder(folder_path):
-            self.search_path = folder_path
+            self.search_path = FilePath(folder_path)
             self.source_of_draws_field.setText(folder_path)
             return draw_list
 
@@ -359,11 +379,11 @@ class UiMerger(WidgetBuilder):
             return
 
         self.path_to_spec_field.setText(spec_path)
-        if cdw_file := self.source_of_draws_field.toPlainText():
-            if cdw_file == self.search_path and self.data_base_file:
+        if source_path := self.source_of_draws_field.toPlainText():
+            if source_path == self.search_path and self.data_base_file:
                 self.get_paths_to_specifications()
             else:
-                self.get_data_base(cdw_file)
+                self.proceed_database_source_path(source_path)
 
     def set_specification_path(self, spec_path: FilePath):
         if not spec_path:
@@ -372,21 +392,21 @@ class UiMerger(WidgetBuilder):
         try:
             utils.check_specification(spec_path)
         except utils.FileNotSpec as e:
-            self.send_error(e)
+            self.send_error(getattr(e, 'message', str(e)))
             return False
         self.specification_path = spec_path
         return True
 
-    def get_paths_to_specifications(self, refresh=False):
-        self.list_widget.clear()
+    def get_paths_to_specifications(self, need_to_merge=False):
+        self.change_list_widget_state(self.list_widget.clear)
         spec_path = self.path_to_spec_field.toPlainText()
         if spec_path != self.specification_path:
             is_spec_path_set = self.set_specification_path(spec_path)
             if not is_spec_path_set:
                 return
-        self.start_search_paths_thread(refresh)
+        self.start_search_paths_thread(need_to_merge)
 
-    def start_search_paths_thread(self, refresh: bool):
+    def start_search_paths_thread(self, need_to_merge: bool):
         def choose_spec_execution(response: dict[DrawExecution, int]):
             radio_window = RadioButtonsWindow(list(response.keys()))
             radio_window.exec_()
@@ -408,7 +428,7 @@ class UiMerger(WidgetBuilder):
             self.specification_path,
             self.data_base_file,
             only_one_specification,
-            refresh,
+            need_to_merge,
             self.data_queue,
             kompas_thread_api=self.kompas_api.collect_thread_api(ThreadKompasAPI)
         )
@@ -419,7 +439,12 @@ class UiMerger(WidgetBuilder):
         self.search_path_thread.choose_spec_execution.connect(choose_spec_execution)
         self.search_path_thread.start()
 
-    def handle_search_path_thread_results(self, missing_list, draw_list, refresh):
+    def handle_search_path_thread_results(
+            self,
+            missing_list: list[str | tuple],
+            draw_list: list[FilePath],
+            need_to_merge: bool
+    ):
         self.status_bar.showMessage('Завершено получение файлов из спецификации')
         self.missing_list.extend(missing_list)
         self.draw_list = draw_list
@@ -427,17 +452,17 @@ class UiMerger(WidgetBuilder):
         if self.missing_list:
             self.print_out_errors(ErrorType.FILE_MISSING)
         if self.draw_list:
-            if refresh:
-                self.list_widget.fill_list(draw_list=self.draw_list)
-                self.start_merge_process(draw_list)
+            if need_to_merge:
+                self.change_list_widget_state(self.list_widget.fill_list, draw_list=draw_list)
+                self.check_merge_changes()
             else:
                 self.calculate_progress_step(len(draw_list), filter_only=True)
                 if self.progress_step:
                     self.start_filter_thread(self.handle_filter_results, draw_list)
                 else:
-                    self.list_widget.fill_list(draw_list=self.draw_list)
+                    self.change_list_widget_state(self.list_widget.fill_list, draw_list=draw_list)
 
-    def print_out_errors(self, error_type: ErrorType) -> str | None:
+    def print_out_errors(self, error_type: ErrorType):
         def save_errors_message_to_txt():
             filename = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "txt(*.txt)")[0]
             if not filename:
@@ -465,18 +490,18 @@ class UiMerger(WidgetBuilder):
             self.send_error('Укажите папку с чертежамиили')
             return
 
-        draw_list = self.proceed_folder_search_path(search_path)
+        draw_list = self.proceed_folder_draw_list_search(search_path)
         if not draw_list:
             return
 
-        self.list_widget.clear()
+        self.change_list_widget_state(self.list_widget.clear)
         self.calculate_progress_step(len(draw_list), filter_only=True)
         if self.progress_step:
             self.start_filter_thread(self.handle_filter_results, draw_list)
         else:
-            self.list_widget.fill_list(draw_list=draw_list)
+            self.change_list_widget_state(self.list_widget.fill_list, draw_list=draw_list)
 
-    def refresh_draws_in_list(self, refresh=False):
+    def refresh_draws_in_list(self, need_to_merge=False):
         search_path = self.source_of_draws_field.toPlainText()
         specification_path = self.path_to_spec_field.toPlainText()
 
@@ -489,7 +514,7 @@ class UiMerger(WidgetBuilder):
             is_spec_path_set = self.set_specification_path(specification_path)
             if not is_spec_path_set:
                 return
-            self.get_data_base(search_path, refresh=refresh)
+            self.proceed_database_source_path(search_path, need_to_merge=need_to_merge)
 
     def is_filters_required(self) -> bool:
         # If refresh button is clicked then all files will be filtered anyway
@@ -513,17 +538,17 @@ class UiMerger(WidgetBuilder):
         self.filter_thread.switch_button_group.connect(self.switch_button_group)
         self.filter_thread.start()
 
-    def handle_filter_results(self, draw_list, errors_list: list[str], filter_only=True):
+    def handle_filter_results(self, draw_list: list[FilePath], errors_list: list[str], filter_only=True):
         self.status_bar.showMessage('Филтрация успешно завршена')
         if not draw_list:
             self.send_error('Нету файлов .cdw или .spw, в выбранной папке(ах) с указанными параметрами')
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
-            self.list_widget.clear()
+            self.change_list_widget_state(self.list_widget.clear)
             return
 
-        self.list_widget.clear()
-        self.list_widget.fill_list(draw_list=draw_list)
+        self.change_list_widget_state(self.list_widget.clear)
+        self.change_list_widget_state(self.list_widget.fill_list, draw_list=draw_list)
         if errors_list:
             self.missing_list = errors_list
             self.print_out_errors(ErrorType.FILE_NOT_OPENED)
@@ -535,31 +560,11 @@ class UiMerger(WidgetBuilder):
         else:
             self.start_merge_process(draw_list)
 
-    def check_data_base_file(self, file_path: FilePath):
-        if not os.path.exists(file_path):
-            self.send_error('Указан несуществующий путь')
-            return
-        if not file_path.endswith('.json'):
-            self.send_error('Указанный файл не является файлом .json')
-            return None
-        with open(file_path) as file:
-            try:
-                self.data_base_file = json.load(file)
-            except json.decoder.JSONDecodeError:
-                self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
-                return None
-            except UnicodeDecodeError:
-                self.send_error('Указана неверная кодировка файл, попытайтесь еще раз сгенерировать данные')
-                return None
-            else:
-                return 1
-
-    def get_all_draw_paths_in_folder(self, search_path: str = None) -> list[FilePath]:
-        search_path = search_path or self.search_path
+    def get_all_draw_paths_in_folder(self, search_path: str) -> list[FilePath] | None:
         draw_list = []
         except_folders_list = self.settings_window_data.except_folders_list
 
-        self.list_widget.clear()
+        self.change_list_widget_state(self.list_widget.clear)
         self.bypassing_folders_inside_previous_status = self.bypassing_folders_inside_checkbox.isChecked()
 
         if self.bypassing_folders_inside_checkbox.isChecked() \
@@ -578,19 +583,25 @@ class UiMerger(WidgetBuilder):
         else:
             self.send_error('Нету файлов .cdw или .spw, в выбраной папке(ах) с указанными параметрами')
 
-    def get_files_in_one_folder(self, folder: str):
-        # sorting in the way so specification sheet is the first if .cdw and .spw files has the same name
-        draw_list = [os.path.splitext(file_path) for file_path in os.listdir(folder)
-                     if os.path.splitext(file_path)[1] in self.kompas_ext]
-        draw_list = sorted([(i[0], '.adw' if i[1] == '.spw' else '.cdw') for i in draw_list], key=itemgetter(0, 1))
-        draw_list = [os.path.join(folder, (i[0] + '.spw' if i[1] == '.adw' else i[0] + '.cdw')) for i in draw_list]
-        draw_list = map(os.path.normpath, draw_list)
-        return draw_list
+    def get_files_in_one_folder(self, folder_path: str) -> list[FilePath]:
+        split_paths: list[tuple[str, str]] = \
+            [os.path.splitext(file_path) for file_path in os.listdir(folder_path)
+             if os.path.splitext(file_path)[1] in self.kompas_ext]
+        temp_list = sorted(split_paths, key=lambda split_path: split_path[1], reverse=True)
+        # sorting in the way so .spw specification sheet is the first if .cdw and .spw files has the same name
+        sorted_split_paths = sorted(temp_list, key=lambda split_path: split_path[0])
+        sorted_draws = [
+            FilePath(os.path.normpath(os.path.join(folder_path, root + ext))) for root, ext in sorted_split_paths
+        ]
+        return sorted_draws
 
-    def merge_files(self):
+    def check_settings_conditions_before_merge(self) -> bool:
+        if not self.source_of_draws_field.toPlainText() and not self.draw_list:
+            self.send_error('Укажите истоники чертежей для слития файлов')
+            raise FolderNotSelected
         if self.serch_in_folder_radio_button.isChecked() and os.path.isfile(self.source_of_draws_field.toPlainText()):
-            self.send_error('Укажите папку для сливания')
-            return
+            self.send_error('В качестве источники для чертежей выбран файл а не папка.')
+            raise FolderNotSelected
 
         elif self.search_by_spec_radio_button.isChecked() \
                 and (self.search_path != self.source_of_draws_field.toPlainText()
@@ -604,9 +615,8 @@ class UiMerger(WidgetBuilder):
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
             )
             if choice == QtWidgets.QMessageBox.Yes:
-                self.refresh_draws_in_list(refresh=True)
-            else:
-                self.merge_files_in_one()
+                self.refresh_draws_in_list(need_to_merge=True)
+                return True
         elif self.serch_in_folder_radio_button.isChecked() and (
                 self.search_path != self.source_of_draws_field.toPlainText()
                 or self.bypassing_folders_inside_checkbox.isChecked()
@@ -619,23 +629,26 @@ class UiMerger(WidgetBuilder):
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
             )
             if choice == QtWidgets.QMessageBox.Yes:
-                self.refresh_draws_in_list()
-            self.merge_files_in_one()
-        else:
-            self.merge_files_in_one()
+                self.fill_list_widget_with_paths(self.source_of_draws_field.toPlainText())
 
-    def merge_files_in_one(self):
+    def check_filter_changes_before_merge(self) -> bool:
         draws_list = self.list_widget.get_items_text_data()
-        if not draws_list:
-            self.send_error('Нету файлов для слития')
-            return
         self.calculate_progress_step(len(draws_list))
         self.switch_button_group(False)
         if self.is_filters_required():
             self.start_filter_thread(self.handle_filter_results, draws_list, filter_only=False)
-            # at the end this method call this function again
-        else:
-            self.start_merge_process(draws_list)
+            return True
+
+    def check_merge_changes(self):
+        try:
+            is_refresh_started = self.check_settings_conditions_before_merge()
+        except FolderNotSelected:
+            return
+        if is_refresh_started:
+            return
+        is_filters_required = self.check_filter_changes_before_merge()
+        if not is_filters_required:  # start_merge_process will be called by function handle_filter_results
+            self.start_merge_process(self.list_widget.get_items_text_data())
 
     def start_merge_process(self, draws_list: list[FilePath]):
         def choose_folder(signal):
@@ -652,7 +665,7 @@ class UiMerger(WidgetBuilder):
         self.merge_thread.increase_step.connect(self.increase_step)
         self.merge_thread.kill_thread.connect(self.stop_merge_thread)
         self.merge_thread.choose_folder.connect(choose_folder)
-        self.merge_thread.errors.connect(self.send_error)
+        self.merge_thread.send_errors.connect(self.send_error)
         self.merge_thread.status.connect(self.status_bar.showMessage)
         self.merge_thread.progress_bar.connect(self.progress_bar.setValue)
 
@@ -675,7 +688,7 @@ class UiMerger(WidgetBuilder):
             )
         self.path_to_spec_field.clear()
         self.path_to_spec_field.setPlaceholderText('Укажите путь до файла со спецификацией')
-        self.list_widget.clear()
+        self.change_list_widget_state(self.list_widget.clear)
 
     def add_file_to_list(self):
         file_path = filedialog.askopenfilename(
@@ -684,7 +697,7 @@ class UiMerger(WidgetBuilder):
             filetypes=(("Спецификация", "*.spw"), ("Чертёж", "*.cdw"))
         )
         if file_path:
-            self.list_widget.fill_list(draw_list=[file_path])
+            self.change_list_widget_state(self.list_widget.fill_list, draw_list=[file_path])
             self.merge_files_button.setEnabled(True)
 
     def add_folder_to_list(self):
@@ -693,7 +706,7 @@ class UiMerger(WidgetBuilder):
         if directory_path:
             draw_list = self.get_files_in_one_folder(directory_path)
         if draw_list:
-            self.list_widget.fill_list(draw_list=draw_list)
+            self.change_list_widget_state(self.list_widget.fill_list, draw_list=draw_list)
             self.merge_files_button.setEnabled(True)
 
     def show_settings(self):
@@ -750,18 +763,27 @@ class UiMerger(WidgetBuilder):
         self.choose_data_base_button.setEnabled(switch)
         self.choose_specification_button.setEnabled(switch)
 
-    def get_data_base(self, source_of_draw_path, refresh=False):
-        if os.path.isdir(source_of_draw_path):
-            if draw_list := self.proceed_folder_search_path(source_of_draw_path):
-                self.get_data_base_from_folder(draw_list, refresh)
-        else:
-            self.load_data_base(source_of_draw_path, refresh)
+    def change_list_widget_state(self, method: Callable, *args, **kwargs):
+        method(*args, **kwargs)
+        self.switch_select_unselect_buttons(self.list_widget.count() > 0)
 
-    def get_data_base_from_folder(self, draw_paths: list[FilePath], refresh=False):
+    def switch_select_unselect_buttons(self, status: bool):
+        self.select_all_button.setEnabled(status)
+        self.remove_selection_button.setEnabled(status)
+        self.save_items_list.setEnabled(status)
+
+    def proceed_database_source_path(self, source_of_draw_path: str | FilePath, need_to_merge=False):
+        if os.path.isdir(source_of_draw_path):
+            if draw_list := self.proceed_folder_draw_list_search(source_of_draw_path):
+                self.get_data_base_from_folder(draw_list, need_to_merge)
+        else:
+            self.search_paths_by_data_base_file(FilePath(source_of_draw_path), need_to_merge)
+
+    def get_data_base_from_folder(self, draw_paths: list[FilePath], need_to_merge=False):
         self.calculate_progress_step(len(draw_paths), get_data_base=True)
         kompas_thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
 
-        self.data_base_thread = DataBaseThread(draw_paths, refresh, kompas_thread_api)
+        self.data_base_thread = DataBaseThread(draw_paths, need_to_merge, kompas_thread_api)
         self.data_base_thread.buttons_enable.connect(self.switch_button_group)
         self.data_base_thread.calculate_step.connect(self.calculate_progress_step)
         self.data_base_thread.errors.connect(self.send_error)
@@ -776,7 +798,7 @@ class UiMerger(WidgetBuilder):
             self,
             data_base: dict[DrawObozn, list[FilePath]],
             errors_list: list[str],
-            refresh=False
+            need_to_merge=False
     ):
         self.progress_bar.setValue(0)
         self.status_bar.showMessage('Завершено получение Базы Чератежей')
@@ -790,11 +812,11 @@ class UiMerger(WidgetBuilder):
             self.print_out_errors(ErrorType.FILE_NOT_OPENED)
 
         self.data_base_file = data_base
-        self.save_data_base()
+        self.choose_database_storage_method()
         if self.specification_path:
-            self.get_paths_to_specifications(refresh)
+            self.get_paths_to_specifications(need_to_merge)
 
-    def save_data_base(self):
+    def choose_database_storage_method(self):
         choice = QtWidgets.QMessageBox.question(
             self,
             'База Чертежей',
@@ -802,25 +824,31 @@ class UiMerger(WidgetBuilder):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
         if choice == QtWidgets.QMessageBox.Yes:
-            self.apply_data_base_save()
+            self.save_database_to_disk()
         else:
             QtWidgets.QMessageBox.information(
                 self,
                 'Отмена записи',
-                'Данные о связях хранятся в памяти'
+                'База хранится в памяти и будет использована только для текущего запуска'
             )
             self.save_data_base_file_button.setEnabled(True)
 
-    def apply_data_base_save(self):
+    def save_database_to_disk(self):
         data_base_path = QtWidgets.QFileDialog.getSaveFileName(self, "Сохранить файл", ".", "Json file(*.json)")[0]
-        if data_base_path:
-            try:
-                with open(data_base_path, 'w') as file:
-                    json.dump(self.data_base_file, file, ensure_ascii=False)
-            except:
-                self.send_error("В базе чертежей имеются ошибки")
-                return
-            self.set_search_path(data_base_path)
+        if not data_base_path:
+            QtWidgets.QMessageBox.information(
+                self,
+                'Отмена записи',
+                'База хранится в памяти и будет использована только для текущего запуска'
+            )
+            return
+        try:
+            with open(data_base_path, 'w') as file:
+                json.dump(self.data_base_file, file, ensure_ascii=False)
+        except:
+            self.send_error("В базе чертежей имеются ошибки")
+            return
+        self.set_search_path(FilePath(data_base_path))
         if self.save_data_base_file_button.isEnabled():
             QtWidgets.QMessageBox.information(
                 self,
@@ -829,30 +857,48 @@ class UiMerger(WidgetBuilder):
             )
             self.save_data_base_file_button.setEnabled(False)
 
-    def get_data_base_path(self):
+    def select_data_base_file_path(self):
         file_path = filedialog.askopenfilename(
             initialdir="",
             title="Загрузить файл",
             filetypes=(("Json file", "*.json"),)
         )
         if file_path:
-            self.load_data_base(FilePath(file_path))
+            self.search_paths_by_data_base_file(FilePath(file_path))
         else:
             self.send_error('Файл с базой не выбран .json')
 
-    def load_data_base(self, file_path: FilePath, refresh=False):
-        filename = file_path or self.search_path
-        response = self.check_data_base_file(filename)
+    def search_paths_by_data_base_file(self, file_path: FilePath, need_to_merge=False):
+        response = self.load_data_base_file(file_path)
         if not response:
             return
-        self.set_search_path(filename)
+        self.set_search_path(file_path)
         if self.specification_path:
-            self.get_paths_to_specifications(refresh)
+            self.get_paths_to_specifications(need_to_merge)
+
+    def load_data_base_file(self, file_path: FilePath):
+        if not os.path.exists(file_path):
+            self.send_error('Указан несуществующий путь')
+            return
+        if not file_path.endswith('.json'):
+            self.send_error('Указанный файл не является файлом .json')
+            return None
+        with open(file_path) as file:
+            try:
+                self.data_base_file = json.load(file)
+            except json.decoder.JSONDecodeError:
+                self.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
+                return None
+            except UnicodeDecodeError:
+                self.send_error('Указана неверная кодировка файл, попытайтесь еще раз сгенерировать данные')
+                return None
+            else:
+                return 1
 
 
 class MergeThread(QThread):
     buttons_enable = pyqtSignal(bool)
-    errors = pyqtSignal(str)
+    send_errors = pyqtSignal(str)
     status = pyqtSignal(str)
     kill_thread = pyqtSignal()
     increase_step = pyqtSignal(bool)
@@ -876,7 +922,6 @@ class MergeThread(QThread):
         self._need_to_split_file = self._settings_window_data.split_file_by_size
         self._need_to_close_files: list[BinaryIO] = []
 
-        self._file_paths_creator: utils.MergerFolderData | None = None
         QThread.__init__(self)
 
     def run(self):
@@ -915,7 +960,7 @@ class MergeThread(QThread):
         self.status.emit('Слитие успешно завершено')
 
     def _kill_thread(self):
-        self.errors.emit('Запись прервана, папка не была найдена')
+        self.send_errors.emit('Запись прервана, папка не была найдена')
         self.buttons_enable.emit(True)
         self.progress_bar.emit(0)
         self.kill_thread.emit()
@@ -924,7 +969,7 @@ class MergeThread(QThread):
         # If request folder from this thread later when trying to retrieve kompas api
         # Exception will be raised, that's why, folder is requested from main UiMerger class
         if self._settings_window_data.save_type == SaveType.AUTO_SAVE_FOLDER:
-            return
+            return None
         self.choose_folder.emit(True)
         while True:
             time.sleep(0.1)
@@ -972,7 +1017,7 @@ class MergeThread(QThread):
 
     def _create_split_merger_data(self, pdf_file_paths) -> dict[FilePath, PdfFileWriter]:
         # using different classes because PyPDF2.PdfFileWriter can add single page unlike PdfFileMerger
-        merger_instance = defaultdict(PdfFileWriter)
+        merger_instance: defaultdict = defaultdict(PdfFileWriter)
 
         for pdf_file_path in pdf_file_paths:
             file = self._get_file_obj(pdf_file_path)
@@ -1034,7 +1079,7 @@ class MergeThread(QThread):
         if not watermark_position:
             return
         if not os.path.exists(watermark_path) or watermark_path == FILE_NOT_EXISTS_MESSAGE:
-            self.send_errors.emit(f'Путь к файлу с картинкой не существует')
+            self.send_errors.emit('Путь к файлу с картинкой не существует')
             return
 
         for pdf_file_path in pdf_file_paths:
@@ -1051,13 +1096,13 @@ class FilterThread(QThread):
         self.draw_paths_list = draw_paths_list
         self.filters = filters
         self.filter_only = filter_only
-        self.errors_list = []
+        self.errors_list: list[str] = []
 
         self.kompas_thread_api = kompas_thread_api
-        self._kompas_api: KompasAPI = None
         QThread.__init__(self)
 
     def run(self):
+        pythoncom.CoInitialize()
         self._kompas_api = KompasAPI(self.kompas_thread_api)
         self.switch_button_group.emit(False)
         filtered_paths_draw_list = self.filter_draws()
@@ -1124,14 +1169,13 @@ class DataBaseThread(QThread):
     buttons_enable = pyqtSignal(bool)
     errors = pyqtSignal(str)
 
-    def __init__(self, draw_paths: list[FilePath], refresh: bool, kompas_thread_api: ThreadKompasAPI):
+    def __init__(self, draw_paths: list[FilePath], need_to_merge: bool, kompas_thread_api: ThreadKompasAPI):
         self.draw_paths = draw_paths
-        self.refresh = refresh
+        self.need_to_merge = need_to_merge
         self.kompas_thread_api = kompas_thread_api
 
-        self.draws_data_base: dict[DrawObozn, [list[FilePath]]] = {}
+        self.draws_data_base: dict[DrawObozn, list[FilePath]] = {}
         self.errors_list: list = []
-        self._kompas_api: KompasAPI | None = None
         QThread.__init__(self)
 
     def run(self):
@@ -1153,13 +1197,14 @@ class DataBaseThread(QThread):
 
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
-        self.finished.emit(self.draws_data_base, self.errors_list, self.refresh)
+        self.finished.emit(self.draws_data_base, self.errors_list, self.need_to_merge)
 
     def _get_meta_obozn_number(self, dir_name: str) -> int | None:
         dir_obj = self.shell.NameSpace(dir_name)  # получаем объект папки виндовс шелл
         for number in range(355):
             if dir_obj.GetDetailsOf(None, number) == 'Обозначение':
                 return number
+        return None
 
     def _create_data_base(self, meta_obozn_number: int):
         for draw_path in self.draw_paths:
@@ -1201,7 +1246,7 @@ class DataBaseThread(QThread):
             # для группировки сообщений при последущей печати
             return [(path_data.draw_obozn, path) for path in path_data.cdw_paths + path_data.spw_paths]
 
-        self.status.emit(f"Открытие Kompas")
+        self.status.emit("Открытие Kompas")
 
         self.calculate_step.emit(len(double_paths_list), False, True)
 
@@ -1237,13 +1282,13 @@ class DataBaseThread(QThread):
         if len(file_paths) < 2:
             return file_paths[0]
 
-        draws_data: list[list[FilePath, int, int]] = []
+        draws_data: list[tuple[FilePath, int, float]] = []
         for path in file_paths:
             try:
                 with self._kompas_api.get_draw_stamp(path) as draw_stamp:
                     stamp_time_of_creation = self._get_stamp_time_of_creation(draw_stamp)
                     file_date_of_creation = os.stat(path).st_ctime
-                    draws_data.append([path, stamp_time_of_creation, file_date_of_creation])
+                    draws_data.append((path, stamp_time_of_creation, file_date_of_creation))
             except DocNotOpened:
                 self.errors_list.append(
                     f'Не удалось открыть файл {path} возможно файл создан в более новой версии или был перемещен\n'
@@ -1276,13 +1321,13 @@ class SearchPathsThread(QThread):
             specification_path: FilePath,
             data_base_file,
             only_one_specification: bool,
-            refresh: bool,
+            need_to_merge: bool,
             data_queue: queue.Queue,
             kompas_thread_api: ThreadKompasAPI
     ):
         self.draw_paths: list[FilePath] = []
         self.missing_list: list = []
-        self.refresh = refresh
+        self.need_to_merge = need_to_merge
         self.specification_path = specification_path
         self.without_sub_assembles = only_one_specification
         self.data_base_file = data_base_file
@@ -1290,12 +1335,12 @@ class SearchPathsThread(QThread):
         self.data_queue = data_queue
 
         self.kompas_thread_api = kompas_thread_api
-        self._kompas_api: KompasAPI = None
         QThread.__init__(self)
 
     def run(self):
         self.buttons_enable.emit(False)
         self.status.emit(f'Обработка {os.path.basename(self.specification_path)}')
+        pythoncom.CoInitialize()
         self._kompas_api = KompasAPI(self.kompas_thread_api)
         try:
             obozn_in_specification, errors = self._get_obozn_from_specification()
@@ -1308,7 +1353,7 @@ class SearchPathsThread(QThread):
             self.process_specification(obozn_in_specification)
 
         self.buttons_enable.emit(True)
-        self.finished.emit(self.missing_list, self.draw_paths, self.refresh)
+        self.finished.emit(self.missing_list, self.draw_paths, self.need_to_merge)
 
     def _get_obozn_from_specification(self):
         def select_execution(_executions: dict[DrawExecution, int]):
@@ -1364,7 +1409,7 @@ class SearchPathsThread(QThread):
                 draw_data,
                 file_extension=".cdw",
                 file_path=spec_path
-            ))
+            ) or "")
             if draw_file_path and draw_file_path not in draw_paths:  # одинаковые пути для одной спеки не добавляем
                 draw_paths.append(draw_file_path)
         return draw_paths
@@ -1376,7 +1421,7 @@ class SearchPathsThread(QThread):
                 draw_data,
                 file_extension='.spw',
                 file_path=spec_path
-            ))
+            ) or "")
             if not spw_file_path or spw_file_path in registered_draws:
                 continue
             registered_draws.append(spw_file_path)
@@ -1420,6 +1465,8 @@ class SearchPathsThread(QThread):
             file_extension: str,
             file_path: FilePath) -> FilePath | None:
         draw_obozn, draw_name = draw_data.draw_obozn, draw_data.draw_name
+        if not draw_name:
+            draw_name = schemas.DrawName("")
 
         try:
             draw_path = self.data_base_file[draw_obozn.lower()]
@@ -1432,7 +1479,7 @@ class SearchPathsThread(QThread):
                 missing_draw = [draw_obozn.upper(), draw_name.capitalize().replace('\n', ' ')]
                 missing_draw_info = (spec_path, ' - '.join(missing_draw))
                 self.missing_list.append(missing_draw_info)
-                return
+                return None
         else:
             draw_path = self.get_correct_draw_path(draw_path, file_extension)
 
@@ -1442,7 +1489,7 @@ class SearchPathsThread(QThread):
             if self.error == 1:  # print this message only once
                 self.missing_list.append(f"\nПуть {draw_path} является недейстительным, обновите базу чертежей")
                 self.error += 1
-            return
+            return None
 
     def try_fetch_spec_path(self, spec_obozn: DrawObozn) -> FilePath | None:
         def look_for_path_by_obozn(draw_obozn_list: list[DrawObozn]) -> FilePath | None:
@@ -1467,11 +1514,11 @@ class SearchPathsThread(QThread):
 
         draw_obozn_creator = DrawOboznCreation(spec_obozn)
         spec_path = look_for_path_by_obozn(draw_obozn_creator.draw_obozn_list)
-        if not spec_path:
-            return
-        if draw_obozn_creator.need_to_verify_path:
-            if not verify_its_correct_spec_path(spec_path, draw_obozn_creator.execution):
-                return
+        if spec_path is None:
+            return None
+        if draw_obozn_creator.need_to_verify_path \
+                and not verify_its_correct_spec_path(spec_path, draw_obozn_creator.execution):
+            return None
         return spec_path
 
 

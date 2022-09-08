@@ -5,7 +5,7 @@ import enum
 import os
 import re
 from contextlib import contextmanager
-from typing import TypeVar, Generic
+from typing import TypeVar, Type
 
 import pythoncom
 from win32com.client import Dispatch, gencache
@@ -92,7 +92,7 @@ class CoreKompass:
             return False
         return True
 
-    def collect_thread_api(self, thread_api: Generic[T]) -> T:
+    def collect_thread_api(self, thread_api: Type[T]) -> T:
         dict_of_stream_objects = {}
         for field in thread_api._fields:
             dict_of_stream_objects[field] = getattr(self, field)
@@ -105,7 +105,8 @@ class CoreKompass:
     def __getattribute__(self, attr):
         if object.__getattribute__(self, attr) is None:
             if attr in ["kompas_api7_module", "application", "const", "app"]:
-                # создание происходит не сразу а лишь при вызове, так как открытие компаса занимает некоторое время
+                # создание происходит не сразу а лишь при вызове,
+                # так как открытие компаса занимает некоторое время
                 self.set_kompas_api()
         return object.__getattribute__(self, attr)
 
@@ -152,9 +153,9 @@ class KompasAPI:
 
     @staticmethod
     def is_detail(obozn: str) -> bool:
-        detail_group = re.match(r".+\.\d[1-9][А-Я]?(?:-0[1-9])?[А-Я]?$", obozn.strip(), re.I)
-        if detail_group:
+        if re.match(r".+\.\d[1-9][А-Я]?(?:-0[1-9])?[А-Я]?$", obozn.strip(), re.I):
             return True
+        return False
 
 
 class Converter:
@@ -212,8 +213,8 @@ class OboznSearcher:
     def need_to_select_executions(self):
         return self.oformlenie == SpecType.GROUP_SPEC
 
-    def get_all_spec_executions(self) -> dict[DrawExecution, int]:
-        executions = {}
+    def get_all_spec_executions(self) -> dict[DrawExecution | str, int]:
+        executions = {'Все исполнения':  WITHOUT_EXECUTION}
 
         for spc_line in self.spc_description.Objects:
             if spc_line.ObjectType != ObjectType.OBOZN_ISP:
@@ -230,15 +231,15 @@ class OboznSearcher:
         if not executions:
             raise NoExecutions
 
-        executions['Все исполнения'] = WITHOUT_EXECUTION
         return executions
 
-    def _verify_column_not_empty(self, column_number: int) -> bool | None:
+    def _verify_column_not_empty(self, column_number: int) -> bool:
         for spc_line in self.spc_description.Objects:
             if spc_line.ObjectType in [1, 2] \
                     and spc_line.Columns.Column(*OBOZN_COLUMN) \
                     and spc_line.Columns.Column(6, column_number, 0).Text.Str.strip():
                 return True
+        return False
 
     def _create_spc_object(self):
         i_layout_sheet = self.doc_2d.LayoutSheets.Item(0)
@@ -267,7 +268,7 @@ class OboznSearcher:
     def _get_obozn_from_simple_specification(self) -> tuple[list[SpecSectionData], list[str]]:
         for line in self.spc_description.Objects:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
-            if not draw_obozn and not draw_name:
+            if not draw_obozn:
                 continue
 
             if line.Section == DrawType.ASSEMBLY_DRAW:
@@ -295,22 +296,22 @@ class OboznSearcher:
 
     def _get_column_numbers(self) -> list[int]:
         def get_obozn_execution() -> DrawExecution:
-            draw_info = fetch_obozn_and_execution(self.spec_obozn)
+            spec_obozn = self.spec_obozn if self.spec_obozn else DrawObozn("")
 
+            draw_info = fetch_obozn_and_execution(spec_obozn)
             if draw_info is None:
-                _execution = "-"
+                _execution = DrawExecution("-")
             else:
                 _, _execution, _ = draw_info
             return _execution
-
         execution = get_obozn_execution()
         column_numbers = [self._get_column_number_by_execution(execution)]
         return column_numbers
 
-    def _get_column_number_by_execution(self, execution: DrawExecution) -> int | None:
+    def _get_column_number_by_execution(self, execution: DrawExecution) -> int:
         def rid_of_extra_chars(_execution: DrawExecution) -> DrawExecution:
             if len(_execution) > 1:
-                _execution = _execution.lstrip('-').lstrip('0').strip()
+                _execution =  DrawExecution(_execution.lstrip('-').lstrip('0').strip())
             return _execution
 
         execution = rid_of_extra_chars(execution)
@@ -404,12 +405,13 @@ class SpecPathChecker(OboznSearcher):
 
         if column_number:
             return True
+        return False
 
 
 def fetch_obozn_and_execution(draw_obozn: DrawObozn) -> tuple[DrawObozn, DrawExecution, str | None] | None:
     draw_info = re.search(r"(.+)(?:-)(0[13579][а-яёa]?$)", draw_obozn, re.I)
     if not draw_info:
-        return
+        return None
 
     obozn, execution = draw_info.groups()
     modification_symbol = ""
