@@ -221,7 +221,6 @@ class UiMerger(WidgetBuilder):
             font=self.arial_12_font,
             command=self.copy_files_from_items_list
         )
-        self.save_items_list.setEnabled(False)
         upper_items_list_layout.addWidget(self.save_items_list)
 
     def setup_list_widget_section(self):
@@ -234,33 +233,33 @@ class UiMerger(WidgetBuilder):
         vertical_layout = QtWidgets.QVBoxLayout()
         horizontal_layout.addLayout(vertical_layout)
 
-        move_line_up_button = self.make_button(
+        self.move_line_up_button = self.make_button(
             text='\n\n',
             size_policy=self.sizepolicy_button_2,
             command=self.list_widget.move_item_up
         )
-        move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
-        move_line_up_button.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_up_button.setIcon(QtGui.QIcon('img/arrow_up.png'))
+        self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
 
-        move_line_down_button = self.make_button(
+        self.move_line_down_button = self.make_button(
             text='\n\n',
             size_policy=self.sizepolicy_button_2,
             command=self.list_widget.move_item_down
         )
-        move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
-        move_line_down_button.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_down_button.setIcon(QtGui.QIcon('img/arrow_down.png'))
+        self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
 
-        delete_list_widget_item = self.make_button(
+        self.delete_list_widget_item = self.make_button(
             text="\n\n",
             size_policy=self.sizepolicy_button_2,
             command=lambda: self.change_list_widget_state(self.list_widget.remove_selected)
         )
-        delete_list_widget_item.setIcon(QtGui.QIcon('img/red_cross.png'))
-        delete_list_widget_item.setIconSize(QtCore.QSize(50, 50))
+        self.delete_list_widget_item.setIcon(QtGui.QIcon('img/red_cross.png'))
+        self.delete_list_widget_item.setIconSize(QtCore.QSize(50, 50))
 
-        vertical_layout.addWidget(move_line_up_button)
-        vertical_layout.addWidget(move_line_down_button)
-        vertical_layout.addWidget(delete_list_widget_item)
+        vertical_layout.addWidget(self.move_line_up_button)
+        vertical_layout.addWidget(self.move_line_down_button)
+        vertical_layout.addWidget(self.delete_list_widget_item)
 
     def setup_lower_list_buttons(self):
         self.select_all_button = self.make_button(
@@ -770,6 +769,9 @@ class UiMerger(WidgetBuilder):
         self.select_all_button.setEnabled(status)
         self.remove_selection_button.setEnabled(status)
         self.save_items_list.setEnabled(status)
+        self.delete_list_widget_item.setEnabled(status)
+        self.move_line_up_button.setEnabled(status)
+        self.move_line_down_button.setEnabled(status)
 
     def proceed_database_source_path(self, source_of_draw_path: str | FilePath, need_to_merge=False):
         if os.path.isdir(source_of_draw_path):
