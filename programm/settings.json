@@ -21,7 +21,7 @@
     "Профиль",
     "Лист"
   ],
-  "add_default_watermark": true,
+  "add_default_watermark": false,
   "watermark_path": "watermark.png",
   "watermark_position":
     [

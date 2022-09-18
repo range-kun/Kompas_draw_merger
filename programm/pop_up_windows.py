@@ -295,19 +295,19 @@ class SettingsWindow(QtWidgets.QDialog):
             self._fill_widgets_with_settings(loaded_user_settings)
 
     def _get_settings_from_file(self) -> UserSettings | None:
+        settings_path = "settings.json"
         try:
-            settings_path = os.path.dirname(os.path.abspath(__file__)) + r"\settings.json"
             if os.stat(settings_path).st_size > 0:
                 with open(settings_path, encoding="utf-8-sig") as data:
                     obj = json.load(data)
-                user_settings = UserSettings.parse_obj(obj)
         except OSError:
-            self.construct_class.send_error("Файл settings.json \n отсутсвует")
+            self.construct_class.send_error(f"Файл settings.json \n отсутсвует {settings_path}")
             return None
         except json.decoder.JSONDecodeError:
             self.construct_class.send_error("В Файл settings.json \n присутсвуют ошибки \n синтаксиса json")
             return None
 
+        user_settings = UserSettings.parse_obj(obj)
         return user_settings
 
     def _fill_widgets_with_settings(self, user_settings: UserSettings):
