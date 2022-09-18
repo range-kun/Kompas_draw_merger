@@ -11,13 +11,10 @@ import pythoncom
 from win32com.client import Dispatch, gencache
 
 
-from schemas import DrawType, SpecSectionData, DrawData, FilePath, DrawObozn, DrawExecution, DrawName, ThreadKompasAPI
+from programm.schemas import DrawType, SpecSectionData, DrawData, FilePath, DrawObozn, DrawExecution, DrawName, \
+    ThreadKompasAPI
 
 DIFFERENCE_ON_DRAW_MESSAGES = ["различияисполненийпосборочномучертежу", "отличияисполненийпосборочномучертежу"]
-
-SIZE_COLUMN = (1, 1, 0)
-OBOZN_COLUMN = (4, 1, 0)
-NAME_COLUMN = (5, 1, 0)
 WITHOUT_EXECUTION = 1000
 
 T = TypeVar("T")
@@ -123,7 +120,7 @@ class KompasAPI:
         doc = self.docs.Open(file_path, False, False)  # открываем документ, в невидимом режиме для записи
         if doc is None:
             raise DocNotOpened
-        if os.path.splitext(file_path)[1] == '.cdw':  # если чертёж, то используем интерфейс для чертежа
+        if os.path.splitext(file_path)[1] == ".cdw":  # если чертёж, то используем интерфейс для чертежа
             doc2d = self.kompas_api7_module.IKompasDocument2D(
                 doc._oleobj_.QueryInterface(self.kompas_api7_module.IKompasDocument2D.CLSID, pythoncom.IID_IDispatch))
         else:  # если спецификация, то используем интерфейс для спецификации
@@ -140,7 +137,7 @@ class KompasAPI:
             yield doc_2d
         except DocNotOpened:
             _, filename = os.path.split(file_path)
-            yield f'Не удалось открыть файл {filename} возможно файл создан в более новой версии \n'
+            yield f"Не удалось открыть файл {filename} возможно файл создан в более новой версии \n"
         finally:
             if doc is not None:
                 doc.Close(self.const.kdDoNotSaveChanges)
@@ -152,10 +149,22 @@ class KompasAPI:
             yield draw_stamp
 
     @staticmethod
-    def is_detail(obozn: str) -> bool:
-        if re.match(r".+\.\d[1-9][А-Я]?(?:-0[1-9])?[А-Я]?$", obozn.strip(), re.I):
-            return True
-        return False
+    def get_line_section(line) -> int:
+        return line.Section
+
+    @staticmethod
+    def get_spc_description(spc_descriptions):
+        return spc_descriptions.Item(0).Objects
+
+    @staticmethod
+    def _get_oformlenie(i_layout_sheet):
+        return i_layout_sheet.LayoutStyleNumber
+
+    def create_spc_object(self, doc_2d, doc):
+        oformlenie = self._get_oformlenie(doc_2d.LayoutSheets.Item(0))  # считываем номер оформления документа
+        spc_descriptions = doc.SpecificationDescriptions
+        spc_description = self.get_spc_description(spc_descriptions)
+        return oformlenie, spc_description
 
 
 class Converter:
@@ -189,20 +198,25 @@ class OboznSearcher:
     """
         Класс поиска обозначений из спецификации групового и обычного типа
     """
+    MAXIMUM_COLUMN_NUMBER = 10
+    SIZE_COLUMN = (1, 1, 0)
+    OBOZN_COLUMN = (4, 1, 0)
+    NAME_COLUMN = (5, 1, 0)
+
     def __init__(
             self,
             spec_path: FilePath,
             kompas_api: KompasAPI,
             spec_obozn: DrawObozn = None,
-            only_document_list: bool = False,
+            without_sub_assembles: bool = False,
     ):
         self.spec_path = spec_path
-        self.only_document_list = only_document_list
+        self.without_sub_assembles = without_sub_assembles
         self.spec_obozn = spec_obozn
         self.kompas_api = kompas_api
 
         self.doc, self.doc_2d = self.kompas_api.get_document_api(self.spec_path)
-        self.oformlenie, self.spc_description = self._create_spc_object()
+        self.oformlenie, self.spc_description = self.kompas_api.create_spc_object(self.doc, self.doc_2d)
         self._check_oformlenie()
 
         self.assembly_draws: list[DrawData] = []
@@ -210,50 +224,52 @@ class OboznSearcher:
         self.detail_draws: list[DrawData] = []
         self.errors: list[str] = []
 
-    def need_to_select_executions(self):
-        return self.oformlenie == SpecType.GROUP_SPEC
-
-    def get_all_spec_executions(self) -> dict[DrawExecution | str, int]:
-        executions = {'Все исполнения':  WITHOUT_EXECUTION}
-
-        for spc_line in self.spc_description.Objects:
-            if spc_line.ObjectType != ObjectType.OBOZN_ISP:
-                continue
-            try:
-                for column_number in range(1, 10):
-                    execution_in_draw = spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
-                    if execution_in_draw == '-':
-                        execution_in_draw = 'Базовое исполнение'
-                    if self._verify_column_not_empty(column_number):
-                        executions[DrawExecution(execution_in_draw)] = column_number
-            except AttributeError:
-                break
-        if not executions:
-            raise NoExecutions
-
-        return executions
-
-    def _verify_column_not_empty(self, column_number: int) -> bool:
-        for spc_line in self.spc_description.Objects:
-            if spc_line.ObjectType in [1, 2] \
-                    and spc_line.Columns.Column(*OBOZN_COLUMN) \
-                    and spc_line.Columns.Column(6, column_number, 0).Text.Str.strip():
-                return True
-        return False
-
-    def _create_spc_object(self):
-        i_layout_sheet = self.doc_2d.LayoutSheets.Item(0)
-        oformlenie = i_layout_sheet.LayoutStyleNumber  # считываем номер оформления документа
-        spc_descriptions = self.doc.SpecificationDescriptions
-        spc_description = spc_descriptions.Item(0)
-        return oformlenie, spc_description
-
     def _check_oformlenie(self):
         if self.oformlenie not in [SpecType.REGULAR_SPEC, SpecType.GROUP_SPEC]:  # работаем только в простой и групповой
             self.doc.Close(self.kompas_api.const.kdDoNotSaveChanges)
             raise NotSupportedSpecType(
                 f"\n{os.path.basename(self.spec_path)} - указан не поддерживаемый тип спефецикации"
             )
+
+    def need_to_select_executions(self):
+        return self.oformlenie == SpecType.GROUP_SPEC
+
+    def get_all_spec_executions(self) -> dict[DrawExecution | str, int]:
+        executions = {}
+        correct_spc_lines = self._get_all_lines_with_correct_type([ObjectType.OBOZN_ISP])
+        for spc_line in correct_spc_lines:
+            try:
+                for column_number in range(1, self.MAXIMUM_COLUMN_NUMBER):
+                    execution_in_draw = self._get_cell_data(spc_line, (6, column_number, 0))
+                    if execution_in_draw == "-":
+                        execution_in_draw = "Базовое исполнение"
+
+                    if self._verify_column_not_empty(column_number):
+                        executions[DrawExecution(execution_in_draw)] = column_number
+            except AttributeError:
+                break
+
+        if not executions:
+            raise NoExecutions
+
+        executions["Все исполнения"] = WITHOUT_EXECUTION
+
+        return executions
+
+    def _get_all_lines_with_correct_type(self, correct_line_type: list[int]) -> list:
+        return [line for line in self.spc_description if line.ObjectType in correct_line_type]
+
+    @staticmethod
+    def _get_cell_data(line, cell_coordinates: tuple[int, int, int]) -> str:
+        return line.Columns.Column(*cell_coordinates).Text.Str.strip()
+
+    def _verify_column_not_empty(self, column_number: int) -> bool:
+        for spc_line in self.spc_description:
+            if spc_line.ObjectType in [ObjectType.REGULAR_LINE, 2] \
+                    and self._get_cell_data(spc_line, self.OBOZN_COLUMN) \
+                    and self._get_cell_data(spc_line, (6, column_number, 0)):
+                return True
+        return False
 
     def get_obozn_from_specification(self, column_numbers: list[int] = None) -> tuple[list[SpecSectionData], list[str]]:
         if self.oformlenie == SpecType.REGULAR_SPEC:
@@ -266,33 +282,41 @@ class OboznSearcher:
         return spec_data, errors
 
     def _get_obozn_from_simple_specification(self) -> tuple[list[SpecSectionData], list[str]]:
-        for line in self.spc_description.Objects:
+        for line in self.spc_description:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
             if not draw_obozn:
                 continue
 
-            if line.Section == DrawType.ASSEMBLY_DRAW:
+            line_section = self.kompas_api.get_line_section(line)
+            if line_section == DrawType.ASSEMBLY_DRAW:
                 self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
-                if self.only_document_list:
-                    return self._create_spec_output(), self.errors
-            self._parse_lines_for_detail_and_spec(line)
+                if self.without_sub_assembles:
+                    break
+            else:
+                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
 
         return self._create_spec_output(), self.errors
 
-    def _parse_lines_for_detail_and_spec(self, line):
-        draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
-        if line.Section == DrawType.SPEC_DRAW:
-            if self.kompas_api.is_detail(draw_obozn):
+    def _parse_lines_for_detail_and_spec(self, draw_obozn: DrawObozn, draw_name: DrawName, size, line_section):
+
+        if line_section == DrawType.SPEC_DRAW:
+            if self.is_detail(draw_obozn) is True:
                 message = f"\nВозможно указана деталь в качестве спецификации " \
                           f"-> {self.spec_path} ||| {draw_obozn} \n"
                 self.errors.append(message)
                 return
             self.spec_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
 
-        elif line.Section == DrawType.DETAIL and size != "б/ч" and size != "бч":
+        elif line_section == DrawType.DETAIL and size != "б/ч" and size != "бч":
             if draw_obozn.lower() in DIFFERENCE_ON_DRAW_MESSAGES or "гост" in draw_name or "гост" in draw_obozn:
                 return
             self.detail_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+
+    @staticmethod
+    def is_detail(obozn: str) -> bool:
+        if re.match(r".+\.\d[1-9][А-ЯA-Z]?(?:-0[1-9])?[А-ЯA-Z]?$", obozn.strip(), re.I):
+            return True
+        return False
 
     def _get_column_numbers(self) -> list[int]:
         def get_obozn_execution() -> DrawExecution:
@@ -305,24 +329,24 @@ class OboznSearcher:
                 _, _execution, _ = draw_info
             return _execution
         execution = get_obozn_execution()
+        # нужно возвращать лист так как по нему итерируемся позже
         column_numbers = [self._get_column_number_by_execution(execution)]
         return column_numbers
 
     def _get_column_number_by_execution(self, execution: DrawExecution) -> int:
         def rid_of_extra_chars(_execution: DrawExecution) -> DrawExecution:
             if len(_execution) > 1:
-                _execution =  DrawExecution(_execution.lstrip('-').lstrip('0').strip())
+                _execution = DrawExecution(_execution.lstrip("-").lstrip("0").strip())
             return _execution
 
         execution = rid_of_extra_chars(execution)
+        correct_spc_lines = self._get_all_lines_with_correct_type([ObjectType.OBOZN_ISP])
 
-        for spc_line in self.spc_description.Objects:
-            if spc_line.ObjectType != ObjectType.OBOZN_ISP:
-                continue
+        for spc_line in correct_spc_lines:
             try:
-                for column_number in range(1, 10):
+                for column_number in range(1, self.MAXIMUM_COLUMN_NUMBER):
                     execution_in_draw = rid_of_extra_chars(
-                        spc_line.Columns.Column(6, column_number, 0).Text.Str.strip()
+                        DrawExecution(self._get_cell_data(spc_line, (6, column_number, 0)))
                     )
                     if execution_in_draw == execution and self._verify_column_not_empty(column_number):
                         return column_number
@@ -336,23 +360,25 @@ class OboznSearcher:
             column_numbers: list[int],
     ) -> tuple[list[SpecSectionData], list[str]]:
         registered_obozn: list[DrawObozn] = []
+        correct_lines = self._get_all_lines_with_correct_type([ObjectType.REGULAR_LINE, 2])
 
-        for line in self.spc_description.Objects:
+        for line in correct_lines:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
             if not draw_obozn or draw_obozn in registered_obozn:
                 continue
 
-            if line.Section == DrawType.ASSEMBLY_DRAW:
+            line_section = self.kompas_api.get_line_section(line)
+            if line_section == DrawType.ASSEMBLY_DRAW:
                 self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
-                if self.only_document_list:
-                    return self._create_spec_output(), self.errors
+                if self.without_sub_assembles:
+                    break
                 registered_obozn.append(draw_obozn)
 
             for column_number in column_numbers:
-                if line.ObjectType not in [1, 2] or not line.Columns.Column(6, column_number, 0).Text.Str:
+                if not self._get_cell_data(line, (6, column_number, 0)):
                     continue
                 registered_obozn.append(draw_obozn)
-                self._parse_lines_for_detail_and_spec(line)
+                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
 
         return self._create_spec_output(), self.errors
 
@@ -368,12 +394,11 @@ class OboznSearcher:
 
         return spec_data
 
-    @staticmethod
-    def _get_line_obozn_name_size(line) -> tuple[DrawObozn | None, DrawName | None, str | None]:
+    def _get_line_obozn_name_size(self, line) -> tuple[DrawObozn | None, DrawName | None, str | None]:
         try:
-            draw_obozn = line.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
-            draw_name = line.Columns.Column(*NAME_COLUMN).Text.Str.strip().lower()
-            size = line.Columns.Column(*SIZE_COLUMN).Text.Str.strip().lower()
+            draw_obozn = DrawObozn(self._get_cell_data(line, self.OBOZN_COLUMN).lower().replace(" ", ""))
+            draw_name = DrawName(self._get_cell_data(line, self.NAME_COLUMN).lower().replace(" ", ""))
+            size = self._get_cell_data(line, self.SIZE_COLUMN).lower().replace(" ", "")
         except AttributeError:
             return None, None, None
         return draw_obozn, draw_name, size
@@ -387,8 +412,8 @@ class SpecPathChecker(OboznSearcher):
     def verify_its_correct_spec_path(self) -> bool:
         def _look_for_line_with_str() -> bool:
             for line in self.spc_description.Objects:
-                if line.ObjectType in [1, 2] and line.Columns.Column(*OBOZN_COLUMN):
-                    obozn = line.Columns.Column(*OBOZN_COLUMN).Text.Str.strip().lower().replace(' ', '')
+                if line.ObjectType in [1, 2] and self._get_cell_data(line, self.OBOZN_COLUMN):
+                    obozn = self._get_cell_data(line, self.OBOZN_COLUMN).strip().lower().replace(" ", "")
                     if obozn in DIFFERENCE_ON_DRAW_MESSAGES:
                         return True
             return False

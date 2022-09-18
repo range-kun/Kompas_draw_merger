@@ -6,13 +6,14 @@ import os
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QGridLayout, QWidget
 
-from widgets_tools import WidgetBuilder, ExcludeFolderListWidget, WidgetStyles
-from schemas import SettingsData, Filters, FilterWidgetPositions, UserSettings, FilePath, SaveType, DrawExecution
-from utils import date_today_by_int, FILE_NOT_EXISTS_MESSAGE
+from programm.widgets_tools import WidgetBuilder, ExcludeFolderListWidget, WidgetStyles
+from programm.schemas import SettingsData, Filters, FilterWidgetPositions, UserSettings, FilePath, SaveType, \
+    DrawExecution
+from programm.utils import date_today_by_int, FILE_NOT_EXISTS_MESSAGE
 
 
-DEFAULT_WATERMARK_PATH = 'bdt_stamp.png'
-DEFAULT_WATERMARK_LABEL = 'Стандартный'
+DEFAULT_WATERMARK_PATH = "bdt_stamp.png"
+DEFAULT_WATERMARK_LABEL = "Стандартный"
 
 
 class SettingsWindow(QtWidgets.QDialog):
@@ -20,7 +21,7 @@ class SettingsWindow(QtWidgets.QDialog):
         QtWidgets.QDialog.__init__(self)
 
         self.watermark_position = []
-        self._watermark_path = ''
+        self._watermark_path = ""
 
         self.construct_class = WidgetBuilder()
         self.style_class = WidgetStyles()
@@ -105,7 +106,7 @@ class SettingsWindow(QtWidgets.QDialog):
     def _setup_filter_by_date_section(self):
         self._filter_by_date_check_box = self.construct_class.make_checkbox(
             font=self._arial_12_font,
-            text='C датой только за указанный период',
+            text="C датой только за указанный период",
             command=self._switch_date_input_filter,
             parent=self.grid_layout_widget
         )
@@ -133,8 +134,8 @@ class SettingsWindow(QtWidgets.QDialog):
             input_radio_button_position=[2, 2, 1, 1]
         )
         self._constructor_filter = FilterSection(
-            'С указанной фамилией разработчиков',
-            'Фамилии из списка',
+            "С указанной фамилией разработчиков",
+            "Фамилии из списка",
             constructor_positions,
             self.grid_layout,
             self.grid_layout_widget,
@@ -151,8 +152,8 @@ class SettingsWindow(QtWidgets.QDialog):
             input_radio_button_position=[5, 2, 1, 1]
         )
         self._checker_filter = FilterSection(
-            'С указанной фамилией проверяющего',
-            'Фамилии из списка',
+            "С указанной фамилией проверяющего",
+            "Фамилии из списка",
             checker_positions,
             self.grid_layout,
             self.grid_layout_widget,
@@ -169,8 +170,8 @@ class SettingsWindow(QtWidgets.QDialog):
             input_radio_button_position=[7, 2, 1, 1]
         )
         self._gauge_filter = FilterSection(
-            'С указанным сортаментом',
-            'Сортамент из списка',
+            "С указанным сортаментом",
+            "Сортамент из списка",
             gauge_positions,
             self.grid_layout,
             self.grid_layout_widget,
@@ -180,7 +181,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_watermark_section(self):
         self._add_water_mark_check_box = self.construct_class.make_checkbox(
-            text='Добавить водяной знак',
+            text="Добавить водяной знак",
             font=self._arial_12_font, parent=self.grid_layout_widget,
             command=self._switch_watermark_group
         )
@@ -195,7 +196,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(self._default_watermark_path_radio_button, 9, 1, 1, 1)
 
         self._custom_watermark_path_radio_button = self.construct_class.make_radio_button(
-            text='Свое изображение', font=self._arial_12_font,
+            text="Свое изображение", font=self._arial_12_font,
             parent=self.grid_layout_widget,
             command=self._watermark_path_radio_option
         )
@@ -213,7 +214,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_split_by_size_section(self):
         self._split_files_by_size_checkbox = self.construct_class.make_checkbox(
-            text='Разбить на файлы по размерам',
+            text="Разбить на файлы по размерам",
             font=self._arial_12_font,
             parent=self.grid_layout_widget
         )
@@ -221,14 +222,14 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_save_file_path_section(self):
         self._manually_choose_save_folder_radio_button = self.construct_class.make_radio_button(
-            text='Указать папку сохранения вручную',
+            text="Указать папку сохранения вручную",
             font=self._arial_ms_shell_12_font,
             parent=self.grid_layout_widget
         )
         self.grid_layout.addWidget(self._manually_choose_save_folder_radio_button, 12, 0, 1, 1)
 
         self._auto_choose_save_folder_radio_button = self.construct_class.make_radio_button(
-            text='Выбрать папку автоматически',
+            text="Выбрать папку автоматически",
             font=self._arial_ms_shell_12_font,
             parent=self.grid_layout_widget
         )
@@ -240,7 +241,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_exclude_folders_section(self):
         exclude_folder_label = self.construct_class.make_label(
-            text='Исключить следующие папки:',
+            text="Исключить следующие папки:",
             font=self._arial_12_font,
             parent=self.grid_layout_widget
         )
@@ -251,7 +252,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(self._exclude_folder_list_widget, 14, 0, 2, 2)
 
         add_exclude_folder_button = self.construct_class.make_button(
-            text='Добавить папку',
+            text="Добавить папку",
             parent=self.grid_layout_widget,
             font=self._arial_12_font,
             size_policy=self._date_policy,
@@ -260,7 +261,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(add_exclude_folder_button,  14, 2, 1, 1)
 
         delete_exclude_folder_button = self.construct_class.make_button(
-            text='Удалить выбранную\n папку',
+            text="Удалить выбранную\n папку",
             parent=self.grid_layout_widget,
             font=self._arial_12_font,
             size_policy=self._date_policy,
@@ -270,7 +271,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_window_settings(self):
         reset_settings_button = self.construct_class.make_button(
-            text='Сбросить настройки',
+            text="Сбросить настройки",
             parent=self.grid_layout_widget,
             font=self._arial_12_font,
             command=self._set_default_settings
@@ -278,7 +279,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(reset_settings_button, 16, 1, 1, 3)
 
         self._close_window_button = self.construct_class.make_button(
-            text='Ок',
+            text="Ок",
             parent=self.grid_layout_widget,
             font=self._arial_12_font,
             command=self.close
@@ -295,16 +296,16 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _get_settings_from_file(self) -> UserSettings | None:
         try:
-            file_dir = os.path.dirname(os.path.abspath(__file__))
-            if os.stat(file_dir+r'\settings.json').st_size > 0:
-                with open('settings.json', encoding='utf-8-sig') as data:
+            settings_path = os.path.dirname(os.path.abspath(__file__)) + r"\settings.json"
+            if os.stat(settings_path).st_size > 0:
+                with open(settings_path, encoding="utf-8-sig") as data:
                     obj = json.load(data)
                 user_settings = UserSettings.parse_obj(obj)
         except OSError:
-            self.construct_class.send_error('Файл settings.txt \n отсутсвует')
+            self.construct_class.send_error("Файл settings.json \n отсутсвует")
             return None
         except json.decoder.JSONDecodeError:
-            self.construct_class.send_error('В Файл settings.txt \n присутсвуют ошибки \n синтаксиса json')
+            self.construct_class.send_error("В Файл settings.json \n присутсвуют ошибки \n синтаксиса json")
             return None
 
         return user_settings
@@ -446,7 +447,7 @@ class FilterSection(QtWidgets.QDialog):
         )
 
         self.data_from_line_radio_button = self.construct_class.make_radio_button(
-            text='Другая',
+            text="Другая",
             font=self.arial_11_font,
             parent=self.parent_widget,
             command=self._choose_data_radio_option
@@ -531,12 +532,12 @@ class RadioButtonsWindow(QtWidgets.QDialog):
     def on_button_clicked(self):
         source = self.sender()
 
-        if source.text() == 'Отмена':
+        if source.text() == "Отмена":
             self.radio_state = None
         self.close()
 
     def _set_label(self):
-        plain_text = QtWidgets.QLabel('Выберите исполнение для слияния:')
+        plain_text = QtWidgets.QLabel("Выберите исполнение для слияния:")
         plain_text.setFont(self._arial_12_font)
         self.layout.addWidget(plain_text, 0, 0, 1, 3)
 
@@ -553,12 +554,12 @@ class RadioButtonsWindow(QtWidgets.QDialog):
     def _add_buttons(self):
         button_layout = QtWidgets.QHBoxLayout()
 
-        ok_button = QtWidgets.QPushButton('OК')
+        ok_button = QtWidgets.QPushButton("OК")
         ok_button.setFont(self._arial_12_font)
         ok_button.clicked.connect(self.on_button_clicked)
         button_layout.addWidget(ok_button)
 
-        cancel_button = QtWidgets.QPushButton('Отмена')
+        cancel_button = QtWidgets.QPushButton("Отмена")
         cancel_button.setFont(self._arial_12_font)
         cancel_button.clicked.connect(self.on_button_clicked)
         button_layout.addWidget(cancel_button)

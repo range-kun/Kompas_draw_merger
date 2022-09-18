@@ -1,21 +1,21 @@
 from collections import namedtuple
 from dataclasses import dataclass
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, auto
 from typing import Any, NewType, NamedTuple
 
 from pydantic import BaseModel
 
 
-FilePath = NewType('FilePath', str)
-FileName = NewType('FileName', str)
-DrawObozn = NewType('DrawObozn', str)
-DrawName = NewType('DrawName', str)
-DrawExecution = NewType('DrawExecution', str)
+FilePath = NewType("FilePath", str)
+FileName = NewType("FileName", str)
+DrawObozn = NewType("DrawObozn", str)
+DrawName = NewType("DrawName", str)
+DrawExecution = NewType("DrawExecution", str)
 
 
 class SaveType(Enum):
-    AUTO_SAVE_FOLDER = 1
-    MANUALLY_SAVE_FOLDER = 2
+    AUTO_SAVE_FOLDER = auto()
+    MANUALLY_SAVE_FOLDER = auto()
 
 
 class DrawType(IntEnum):
@@ -25,8 +25,8 @@ class DrawType(IntEnum):
 
 
 class ErrorType(Enum):
-    FILE_MISSING = 1
-    FILE_NOT_OPENED = 2
+    FILE_MISSING = auto()
+    FILE_NOT_OPENED = auto()
 
 
 @dataclass
@@ -72,12 +72,12 @@ class SettingsData:
 
 
 FilterWidgetPositions = namedtuple(
-    'FilterWidgetPositions',
-    'check_box_position '
-    'combobox_position '
-    'input_line_position '
-    'combobox_radio_button_position '
-    'input_radio_button_position '
+    "FilterWidgetPositions",
+    "check_box_position "
+    "combobox_position "
+    "input_line_position "
+    "combobox_radio_button_position "
+    "input_radio_button_position "
 )
 
 
@@ -92,3 +92,9 @@ class DoublePathsData:
     draw_obozn: DrawObozn
     spw_paths: list[FilePath]
     cdw_paths: list[FilePath]
+
+
+@dataclass
+class MergerData:
+    delete_single_draws_after_merge_checkbox: bool
+    specification_path: FilePath | None = None

@@ -4,11 +4,9 @@ import re
 import time
 from datetime import datetime
 from operator import itemgetter
-from pathlib import Path
 
-from kompas_api import fetch_obozn_and_execution
-from schemas import FilePath, FileName, DrawObozn, DrawExecution, ErrorType
-from PyQt5 import QtWidgets
+from programm.kompas_api import fetch_obozn_and_execution
+from programm.schemas import FilePath, FileName, DrawObozn, DrawExecution, ErrorType, MergerData
 
 FILE_NOT_EXISTS_MESSAGE = "Путь к файлу из настроек не существует"
 
@@ -18,7 +16,7 @@ class FileNotSpec(Exception):
 
 
 def date_today_by_int() -> list[int]:
-    return [int(i) for i in str(datetime.date(datetime.now())).split('-')]
+    return [int(i) for i in str(datetime.date(datetime.now())).split("-")]
 
 
 def get_today_date():
@@ -26,17 +24,17 @@ def get_today_date():
 
 
 def check_specification(spec_path: FilePath):
-    if not spec_path.endswith('.spw') or not os.path.isfile(spec_path):
-        raise FileNotSpec('Указанный файл не является спецификацией или не существует')
+    if not spec_path.endswith(".spw") or not os.path.isfile(spec_path):
+        raise FileNotSpec("Указанный файл не является спецификацией или не существует")
     if not os.path.isfile(spec_path):
         raise FileExistsError("Указанный файл не существует")
 
 
 def date_to_seconds(date_string):
-    if len(date_string.split('.')[-1]) == 2:
-        new_date = date_string.split('.')
-        new_date[-1] = '20' + new_date[-1]
-        date_string = '.'.join(new_date)
+    if len(date_string.split(".")[-1]) == 2:
+        new_date = date_string.split(".")
+        new_date[-1] = "20" + new_date[-1]
+        date_string = ".".join(new_date)
     struct_date = time.strptime(date_string, "%d.%m.%Y")
     return time.mktime(struct_date)
 
@@ -51,18 +49,18 @@ class MergerFolderData:
             path_to_search: FilePath,
             need_to_be_split: bool,
             draw_file_paths: list[FilePath],
-            merger_class,
+            merger_data: MergerData,
             directory_to_save: str | None = None
     ):
         self._directory_to_save = directory_to_save
         self._path_to_search = path_to_search
         self._draw_file_paths = draw_file_paths
         self._need_to_be_split = need_to_be_split
-        self._ui_merger = merger_class
-        self._single_draw_dir_name = 'Однодетальные'
+        self.merger_data = merger_data
+        self._single_draw_dir_name = "Однодетальные"
 
         self._today_date = get_today_date()
-        self._core_dir = rf'{directory_to_save or self._path_to_search}\pdf'
+        self._core_dir = rf"{directory_to_save or self._path_to_search}\pdf"
 
         self._main_draw_name = self._fetch_main_draw_name()
         self.single_draw_dir = self._fetch_single_draw_dir()
@@ -72,7 +70,7 @@ class MergerFolderData:
         if size:  # need to split
             format_name = self._fetch_format(size)
             return FilePath(os.path.join(
-                os.path.dirname(self.single_draw_dir), f'{format_name}-{self._main_draw_name}.pdf'
+                os.path.dirname(self.single_draw_dir), f"{format_name}-{self._main_draw_name}.pdf"
             ))
         else:
             pdf_file_name = f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
@@ -104,32 +102,28 @@ class MergerFolderData:
         return file_paths
 
     def _fetch_main_draw_name(self) -> FileName:
-        if self._ui_merger.search_by_spec_radio_button.isChecked():
-            main_name = Path(self._ui_merger.specification_path).stem
-        else:
-            main_name = os.path.basename(self._path_to_search)
-        return FileName(main_name)
+        return FileName(self.merger_data.specification_path or os.path.basename(self._path_to_search))
 
     def _get_current_file_prefix_number(self) -> str:
         # next code check if folder or file with same name exists if so:
         # get maximum number of files and folders and incriminate +1 to name of new file and folder
         try:
-            string_of_files = ' '.join(os.listdir(self._core_dir))
+            string_of_files = " ".join(os.listdir(self._core_dir))
         except FileNotFoundError:
-            return '01'
+            return "01"
 
         cur_max_prefix_number = \
-            max(map(int, re.findall(rf'{self._main_draw_name} - (\d\d)(?= {self._today_date})', string_of_files)),
+            max(map(int, re.findall(rf"{self._main_draw_name} - (\d\d)(?= {self._today_date})", string_of_files)),
                 default=0)
-        return str(cur_max_prefix_number + 1) if cur_max_prefix_number > 8 else '0' + str(cur_max_prefix_number + 1)
+        return str(cur_max_prefix_number + 1) if cur_max_prefix_number > 8 else "0" + str(cur_max_prefix_number + 1)
 
     def _fetch_single_draw_dir(self) -> FilePath:
         prefix_number = self._get_current_file_prefix_number()
-        _single_draw_dir = fr'{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}'
+        _single_draw_dir = fr"{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}"
         if self._need_to_be_split:
-            _single_draw_dir += rf'\{self._single_draw_dir_name}'
+            _single_draw_dir += rf"\{self._single_draw_dir_name}"
         else:
-            _single_draw_dir += f' {self._single_draw_dir_name}'
+            _single_draw_dir += f" {self._single_draw_dir_name}"
         return FilePath(_single_draw_dir)
 
 
@@ -234,8 +228,8 @@ class ErrorsPrinter:
     @staticmethod
     def _group_missing_files_info(grouped_messages: list[tuple[FileName, DrawObozn]]) -> str:
         grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
-        grouped_list_message = [key + ':\n' + '\n'.join(['----' + v for k, v in value]) for key, value in grouped_list]
-        return '\n'.join(grouped_list_message)
+        grouped_list_message = [key + ":\n" + "\n".join(["----" + v for k, v in value]) for key, value in grouped_list]
+        return "\n".join(grouped_list_message)
 
     @staticmethod
     def _create_missing_files_message(missing_message: str, one_line_messages: list[str]) -> tuple[str, str]:
