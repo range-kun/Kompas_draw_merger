@@ -1,7 +1,12 @@
 from collections import namedtuple
 from dataclasses import dataclass
-from enum import Enum, IntEnum, auto
-from typing import Any, NewType, NamedTuple
+from dataclasses import field
+from enum import auto
+from enum import Enum
+from enum import IntEnum
+from typing import Any
+from typing import NamedTuple
+from typing import NewType
 
 from pydantic import BaseModel
 
@@ -63,7 +68,7 @@ class Filters:
 
 @dataclass
 class SettingsData:
-    filters: Filters = Filters()
+    filters: Filters = field(default_factory=Filters)
     watermark_path: FilePath | None = None
     watermark_position: list[int] | None = None
     split_file_by_size: bool = False
@@ -77,7 +82,7 @@ FilterWidgetPositions = namedtuple(
     "combobox_position "
     "input_line_position "
     "combobox_radio_button_position "
-    "input_radio_button_position "
+    "input_radio_button_position ",
 )
 
 

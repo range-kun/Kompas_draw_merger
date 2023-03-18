@@ -5,16 +5,26 @@ import enum
 import os
 import re
 from contextlib import contextmanager
-from typing import TypeVar, Type
+from typing import Type
+from typing import TypeVar
 
 import pythoncom
-from win32com.client import Dispatch, gencache
+from win32com.client import Dispatch
+from win32com.client import gencache
 
+from programm.schemas import DrawData
+from programm.schemas import DrawExecution
+from programm.schemas import DrawName
+from programm.schemas import DrawObozn
+from programm.schemas import DrawType
+from programm.schemas import FilePath
+from programm.schemas import SpecSectionData
+from programm.schemas import ThreadKompasAPI
 
-from programm.schemas import DrawType, SpecSectionData, DrawData, FilePath, DrawObozn, DrawExecution, DrawName, \
-    ThreadKompasAPI
-
-DIFFERENCE_ON_DRAW_MESSAGES = ["различияисполненийпосборочномучертежу", "отличияисполненийпосборочномучертежу"]
+DIFFERENCE_ON_DRAW_MESSAGES = [
+    "различияисполненийпосборочномучертежу",
+    "отличияисполненийпосборочномучертежу",
+]
 WITHOUT_EXECUTION = 1000
 
 T = TypeVar("T")
@@ -53,6 +63,7 @@ class CoreKompass:
     """
     Класс запуска, создания API и выхода из компаса
     """
+
     def __init__(self):
         self.kompas_api7_module = None
         self.application = None
@@ -61,21 +72,27 @@ class CoreKompass:
 
     def set_kompas_api(self):
         pythoncom.CoInitialize()
-        self.kompas_api7_module = gencache.EnsureModule("{69AC2981-37C0-4379-84FD-5DD2F3C0A520}", 0, 1, 0)
+        self.kompas_api7_module = gencache.EnsureModule(
+            "{69AC2981-37C0-4379-84FD-5DD2F3C0A520}", 0, 1, 0
+        )
         self.application = self.kompas_api7_module.IApplication(
             Dispatch("Kompas.Application.7")._oleobj_.QueryInterface(
                 self.kompas_api7_module.IKompasAPIObject.CLSID, pythoncom.IID_IDispatch
             )
         )
         self.app = self.application.Application
-        self.const = gencache.EnsureModule("{75C9F5D0-B5B8-4526-8681-9903C567D2ED}", 0, 1, 0).constants
+        self.const = gencache.EnsureModule(
+            "{75C9F5D0-B5B8-4526-8681-9903C567D2ED}", 0, 1, 0
+        ).constants
         self.app.HideMessage = self.const.ksHideMessageYes
 
     @property
     def application_stream(self):
-        # нужно отдавать всегда новый стрим т.к в разных потоках не может работать конвертированный до этого com объект
+        # нужно отдавать всегда новый стрим т.к
+        # в разных потоках не может работать конвертированный до этого com объект
         return pythoncom.CoMarshalInterThreadInterfaceInStream(
-            pythoncom.IID_IDispatch, self.application)
+            pythoncom.IID_IDispatch, self.application
+        )
 
     def exit_kompas(self):
         if self.is_kompas_open():
@@ -97,12 +114,16 @@ class CoreKompass:
 
     @classmethod
     def convert_stream_to_com(cls, stream_obj):
-        return Dispatch(pythoncom.CoGetInterfaceAndReleaseStream(stream_obj, pythoncom.IID_IDispatch))
+        return Dispatch(
+            pythoncom.CoGetInterfaceAndReleaseStream(
+                stream_obj, pythoncom.IID_IDispatch
+            )
+        )
 
     def __getattribute__(self, attr):
         if object.__getattribute__(self, attr) is None:
             if attr in ["kompas_api7_module", "application", "const", "app"]:
-                # создание происходит не сразу а лишь при вызове,
+                # создание происходит не сразу, а лишь при вызове,
                 # так как открытие компаса занимает некоторое время
                 self.set_kompas_api()
         return object.__getattribute__(self, attr)
@@ -111,22 +132,35 @@ class CoreKompass:
 class KompasAPI:
     def __init__(self, kompas_api_data: ThreadKompasAPI):
         self.kompas_api7_module = kompas_api_data.kompas_api7_module
-        application = CoreKompass.convert_stream_to_com(kompas_api_data.application_stream)
+        application = CoreKompass.convert_stream_to_com(
+            kompas_api_data.application_stream
+        )
         self.app = application.Application
         self.docs = self.app.Documents
         self.const = kompas_api_data.const
 
     def get_document_api(self, file_path: FilePath):
-        doc = self.docs.Open(file_path, False, False)  # открываем документ, в невидимом режиме для записи
+        doc = self.docs.Open(
+            file_path, False, False
+        )  # открываем документ, в невидимом режиме для записи
         if doc is None:
             raise DocNotOpened
-        if os.path.splitext(file_path)[1] == ".cdw":  # если чертёж, то используем интерфейс для чертежа
+        if (
+            os.path.splitext(file_path)[1] == ".cdw"
+        ):  # если чертёж, то используем интерфейс для чертежа
             doc2d = self.kompas_api7_module.IKompasDocument2D(
-                doc._oleobj_.QueryInterface(self.kompas_api7_module.IKompasDocument2D.CLSID, pythoncom.IID_IDispatch))
+                doc._oleobj_.QueryInterface(
+                    self.kompas_api7_module.IKompasDocument2D.CLSID,
+                    pythoncom.IID_IDispatch,
+                )
+            )
         else:  # если спецификация, то используем интерфейс для спецификации
             doc2d = self.kompas_api7_module.ISpecificationDocument(
-                doc._oleobj_.QueryInterface
-                (self.kompas_api7_module.ISpecificationDocument.CLSID, pythoncom.IID_IDispatch))
+                doc._oleobj_.QueryInterface(
+                    self.kompas_api7_module.ISpecificationDocument.CLSID,
+                    pythoncom.IID_IDispatch,
+                )
+            )
         return doc, doc2d
 
     @contextmanager
@@ -161,7 +195,9 @@ class KompasAPI:
         return i_layout_sheet.LayoutStyleNumber
 
     def create_spc_object(self, doc_2d, doc):
-        oformlenie = self._get_oformlenie(doc_2d.LayoutSheets.Item(0))  # считываем номер оформления документа
+        oformlenie = self._get_oformlenie(
+            doc_2d.LayoutSheets.Item(0)
+        )  # считываем номер оформления документа
         spc_descriptions = doc.SpecificationDescriptions
         spc_description = self.get_spc_description(spc_descriptions)
         return oformlenie, spc_description
@@ -169,25 +205,35 @@ class KompasAPI:
 
 class Converter:
     def __init__(self, kompas_api_data: ThreadKompasAPI):
-        kompas_api_data = CoreKompass.convert_stream_to_com(kompas_api_data.application_stream)
+        kompas_api_data = CoreKompass.convert_stream_to_com(
+            kompas_api_data.application_stream
+        )
         self.application = kompas_api_data.Application
         self.kompas_api5_module = Dispatch("Kompas.Application.5")
         self.converter = self.set_converter()
 
     def set_converter(self):
-        converter = self.application.Converter(self.kompas_api5_module.ksSystemPath(5) + r"\Pdf2d.dll")
-        converter_parameters_module = gencache.EnsureModule("{31EBF650-BD38-43EC-892B-1F8AC6C14430}", 0, 1, 0)
-        converter_parameters = converter_parameters_module. \
-            IPdf2dParam(converter.ConverterParameters(0)._oleobj_.
-                        QueryInterface(converter_parameters_module.IPdf2dParam.CLSID, pythoncom.IID_IDispatch))
+        converter = self.application.Converter(
+            self.kompas_api5_module.ksSystemPath(5) + r"\Pdf2d.dll"
+        )
+        converter_parameters_module = gencache.EnsureModule(
+            "{31EBF650-BD38-43EC-892B-1F8AC6C14430}", 0, 1, 0
+        )
+        converter_parameters = converter_parameters_module.IPdf2dParam(
+            converter.ConverterParameters(0)._oleobj_.QueryInterface(
+                converter_parameters_module.IPdf2dParam.CLSID, pythoncom.IID_IDispatch
+            )
+        )
 
         converter_parameters.CutByFormat = True  # обрезать по формату
         converter_parameters.EmbedFonts = True  # встроить шрифты
         converter_parameters.GrayScale = True  # оттенки серого
         converter_parameters.MultiPageOutput = True  # сохранять все страницы
         converter_parameters.MultipleFormat = 1
-        converter_parameters.Resolution = 300  # разрешение ( на векторные пдф ваще не влияет никак)
-        converter_parameters.Scale = 1.0  # масшта
+        converter_parameters.Resolution = (
+            300  # разрешение (на векторные pdf не влияет никак)
+        )
+        converter_parameters.Scale = 1.0  # масштаб
         return converter
 
     def convert_draw_to_pdf(self, draw_path: FilePath, pdf_file_path: FilePath):
@@ -196,19 +242,20 @@ class Converter:
 
 class OboznSearcher:
     """
-        Класс поиска обозначений из спецификации групового и обычного типа
+    Класс поиска обозначений из спецификации группового и обычного типа
     """
+
     MAXIMUM_COLUMN_NUMBER = 10
     SIZE_COLUMN = (1, 1, 0)
     OBOZN_COLUMN = (4, 1, 0)
     NAME_COLUMN = (5, 1, 0)
 
     def __init__(
-            self,
-            spec_path: FilePath,
-            kompas_api: KompasAPI,
-            spec_obozn: DrawObozn = None,
-            without_sub_assembles: bool = False,
+        self,
+        spec_path: FilePath,
+        kompas_api: KompasAPI,
+        spec_obozn: DrawObozn = None,
+        without_sub_assembles: bool = False,
     ):
         self.spec_path = spec_path
         self.without_sub_assembles = without_sub_assembles
@@ -216,7 +263,9 @@ class OboznSearcher:
         self.kompas_api = kompas_api
 
         self.doc, self.doc_2d = self.kompas_api.get_document_api(self.spec_path)
-        self.oformlenie, self.spc_description = self.kompas_api.create_spc_object(self.doc, self.doc_2d)
+        self.oformlenie, self.spc_description = self.kompas_api.create_spc_object(
+            self.doc, self.doc_2d
+        )
         self._check_oformlenie()
 
         self.assembly_draws: list[DrawData] = []
@@ -225,10 +274,13 @@ class OboznSearcher:
         self.errors: list[str] = []
 
     def _check_oformlenie(self):
-        if self.oformlenie not in [SpecType.REGULAR_SPEC, SpecType.GROUP_SPEC]:  # работаем только в простой и групповой
+        if self.oformlenie not in [
+            SpecType.REGULAR_SPEC,
+            SpecType.GROUP_SPEC,
+        ]:  # работаем только в простой и групповой
             self.doc.Close(self.kompas_api.const.kdDoNotSaveChanges)
             raise NotSupportedSpecType(
-                f"\n{os.path.basename(self.spec_path)} - указан не поддерживаемый тип спефецикации"
+                f"\n{os.path.basename(self.spec_path)} - указан не поддерживаемый тип спецификации"
             )
 
     def need_to_select_executions(self):
@@ -236,11 +288,15 @@ class OboznSearcher:
 
     def get_all_spec_executions(self) -> dict[DrawExecution | str, int]:
         executions = {}
-        correct_spc_lines = self._get_all_lines_with_correct_type([ObjectType.OBOZN_ISP])
+        correct_spc_lines = self._get_all_lines_with_correct_type(
+            [ObjectType.OBOZN_ISP]
+        )
         for spc_line in correct_spc_lines:
             try:
                 for column_number in range(1, self.MAXIMUM_COLUMN_NUMBER):
-                    execution_in_draw = self._get_cell_data(spc_line, (6, column_number, 0))
+                    execution_in_draw = self._get_cell_data(
+                        spc_line, (6, column_number, 0)
+                    )
                     if execution_in_draw == "-":
                         execution_in_draw = "Базовое исполнение"
 
@@ -257,7 +313,11 @@ class OboznSearcher:
         return executions
 
     def _get_all_lines_with_correct_type(self, correct_line_type: list[int]) -> list:
-        return [line for line in self.spc_description if line.ObjectType in correct_line_type]
+        return [
+            line
+            for line in self.spc_description
+            if line.ObjectType in correct_line_type
+        ]
 
     @staticmethod
     def _get_cell_data(line, cell_coordinates: tuple[int, int, int]) -> str:
@@ -265,13 +325,17 @@ class OboznSearcher:
 
     def _verify_column_not_empty(self, column_number: int) -> bool:
         for spc_line in self.spc_description:
-            if spc_line.ObjectType in [ObjectType.REGULAR_LINE, 2] \
-                    and self._get_cell_data(spc_line, self.OBOZN_COLUMN) \
-                    and self._get_cell_data(spc_line, (6, column_number, 0)):
+            if (
+                spc_line.ObjectType in [ObjectType.REGULAR_LINE, 2]
+                and self._get_cell_data(spc_line, self.OBOZN_COLUMN)
+                and self._get_cell_data(spc_line, (6, column_number, 0))
+            ):
                 return True
         return False
 
-    def get_obozn_from_specification(self, column_numbers: list[int] = None) -> tuple[list[SpecSectionData], list[str]]:
+    def get_obozn_from_specification(
+        self, column_numbers: list[int] = None
+    ) -> tuple[list[SpecSectionData], list[str]]:
         if self.oformlenie == SpecType.REGULAR_SPEC:
             response = self._get_obozn_from_simple_specification()
         else:  # group sdec
@@ -281,7 +345,9 @@ class OboznSearcher:
         spec_data, errors = response
         return spec_data, errors
 
-    def _get_obozn_from_simple_specification(self) -> tuple[list[SpecSectionData], list[str]]:
+    def _get_obozn_from_simple_specification(
+        self,
+    ) -> tuple[list[SpecSectionData], list[str]]:
         for line in self.spc_description:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
             if not draw_obozn:
@@ -289,28 +355,42 @@ class OboznSearcher:
 
             line_section = self.kompas_api.get_line_section(line)
             if line_section == DrawType.ASSEMBLY_DRAW:
-                self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+                self.assembly_draws.append(
+                    DrawData(draw_obozn=draw_obozn, draw_name=draw_name)
+                )
                 if self.without_sub_assembles:
                     break
             else:
-                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
+                self._parse_lines_for_detail_and_spec(
+                    draw_obozn, draw_name, size, line_section
+                )
 
         return self._create_spec_output(), self.errors
 
-    def _parse_lines_for_detail_and_spec(self, draw_obozn: DrawObozn, draw_name: DrawName, size, line_section):
+    def _parse_lines_for_detail_and_spec(
+        self, draw_obozn: DrawObozn, draw_name: DrawName, size, line_section
+    ):
 
         if line_section == DrawType.SPEC_DRAW:
             if self.is_detail(draw_obozn) is True:
-                message = f"\nВозможно указана деталь в качестве спецификации " \
-                          f"-> {self.spec_path} ||| {draw_obozn} \n"
+                message = (
+                    f"\nВозможно указана деталь в качестве спецификации "
+                    f"-> {self.spec_path} ||| {draw_obozn} \n"
+                )
                 self.errors.append(message)
                 return
             self.spec_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
 
         elif line_section == DrawType.DETAIL and size != "б/ч" and size != "бч":
-            if draw_obozn.lower() in DIFFERENCE_ON_DRAW_MESSAGES or "гост" in draw_name or "гост" in draw_obozn:
+            if (
+                draw_obozn.lower() in DIFFERENCE_ON_DRAW_MESSAGES
+                or "гост" in draw_name
+                or "гост" in draw_obozn
+            ):
                 return
-            self.detail_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+            self.detail_draws.append(
+                DrawData(draw_obozn=draw_obozn, draw_name=draw_name)
+            )
 
     @staticmethod
     def is_detail(obozn: str) -> bool:
@@ -328,6 +408,7 @@ class OboznSearcher:
             else:
                 _, _execution, _ = draw_info
             return _execution
+
         execution = get_obozn_execution()
         # нужно возвращать лист так как по нему итерируемся позже
         column_numbers = [self._get_column_number_by_execution(execution)]
@@ -340,15 +421,22 @@ class OboznSearcher:
             return _execution
 
         execution = rid_of_extra_chars(execution)
-        correct_spc_lines = self._get_all_lines_with_correct_type([ObjectType.OBOZN_ISP])
+        correct_spc_lines = self._get_all_lines_with_correct_type(
+            [ObjectType.OBOZN_ISP]
+        )
 
         for spc_line in correct_spc_lines:
             try:
                 for column_number in range(1, self.MAXIMUM_COLUMN_NUMBER):
                     execution_in_draw = rid_of_extra_chars(
-                        DrawExecution(self._get_cell_data(spc_line, (6, column_number, 0)))
+                        DrawExecution(
+                            self._get_cell_data(spc_line, (6, column_number, 0))
+                        )
                     )
-                    if execution_in_draw == execution and self._verify_column_not_empty(column_number):
+                    if (
+                        execution_in_draw == execution
+                        and self._verify_column_not_empty(column_number)
+                    ):
                         return column_number
             except AttributeError:
                 raise NoExecutions
@@ -356,11 +444,13 @@ class OboznSearcher:
         raise NoExecutions
 
     def _get_obozn_from_group_spec(
-            self,
-            column_numbers: list[int],
+        self,
+        column_numbers: list[int],
     ) -> tuple[list[SpecSectionData], list[str]]:
         registered_obozn: list[DrawObozn] = []
-        correct_lines = self._get_all_lines_with_correct_type([ObjectType.REGULAR_LINE, 2])
+        correct_lines = self._get_all_lines_with_correct_type(
+            [ObjectType.REGULAR_LINE, 2]
+        )
 
         for line in correct_lines:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
@@ -369,7 +459,9 @@ class OboznSearcher:
 
             line_section = self.kompas_api.get_line_section(line)
             if line_section == DrawType.ASSEMBLY_DRAW:
-                self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
+                self.assembly_draws.append(
+                    DrawData(draw_obozn=draw_obozn, draw_name=draw_name)
+                )
                 if self.without_sub_assembles:
                     break
                 registered_obozn.append(draw_obozn)
@@ -378,26 +470,37 @@ class OboznSearcher:
                 if not self._get_cell_data(line, (6, column_number, 0)):
                     continue
                 registered_obozn.append(draw_obozn)
-                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
+                self._parse_lines_for_detail_and_spec(
+                    draw_obozn, draw_name, size, line_section
+                )
 
         return self._create_spec_output(), self.errors
 
     def _create_spec_output(self) -> list[SpecSectionData]:
         spec_data = []
         for draw_type, draw_names in [
-                (DrawType.ASSEMBLY_DRAW, self.assembly_draws),
-                (DrawType.DETAIL, self.detail_draws),
-                (DrawType.SPEC_DRAW, self.spec_draws)]:
+            (DrawType.ASSEMBLY_DRAW, self.assembly_draws),
+            (DrawType.DETAIL, self.detail_draws),
+            (DrawType.SPEC_DRAW, self.spec_draws),
+        ]:
             if not draw_names:
                 continue
-            spec_data.append(SpecSectionData(draw_type=draw_type, draw_names=draw_names))
+            spec_data.append(
+                SpecSectionData(draw_type=draw_type, draw_names=draw_names)
+            )
 
         return spec_data
 
-    def _get_line_obozn_name_size(self, line) -> tuple[DrawObozn | None, DrawName | None, str | None]:
+    def _get_line_obozn_name_size(
+        self, line
+    ) -> tuple[DrawObozn | None, DrawName | None, str | None]:
         try:
-            draw_obozn = DrawObozn(self._get_cell_data(line, self.OBOZN_COLUMN).lower().replace(" ", ""))
-            draw_name = DrawName(self._get_cell_data(line, self.NAME_COLUMN).lower().replace(" ", ""))
+            draw_obozn = DrawObozn(
+                self._get_cell_data(line, self.OBOZN_COLUMN).lower().replace(" ", "")
+            )
+            draw_name = DrawName(
+                self._get_cell_data(line, self.NAME_COLUMN).lower().replace(" ", "")
+            )
             size = self._get_cell_data(line, self.SIZE_COLUMN).lower().replace(" ", "")
         except AttributeError:
             return None, None, None
@@ -405,15 +508,24 @@ class OboznSearcher:
 
 
 class SpecPathChecker(OboznSearcher):
-    def __init__(self, spec_path: FilePath, kompas_api: KompasAPI, execution: DrawExecution):
+    def __init__(
+        self, spec_path: FilePath, kompas_api: KompasAPI, execution: DrawExecution
+    ):
         super(SpecPathChecker, self).__init__(spec_path, kompas_api)
         self.execution = execution
 
     def verify_its_correct_spec_path(self) -> bool:
         def _look_for_line_with_str() -> bool:
-            for line in self.spc_description.Objects:
-                if line.ObjectType in [1, 2] and self._get_cell_data(line, self.OBOZN_COLUMN):
-                    obozn = self._get_cell_data(line, self.OBOZN_COLUMN).strip().lower().replace(" ", "")
+            for line in self.spc_description:
+                if line.ObjectType in [1, 2] and self._get_cell_data(
+                    line, self.OBOZN_COLUMN
+                ):
+                    obozn = (
+                        self._get_cell_data(line, self.OBOZN_COLUMN)
+                        .strip()
+                        .lower()
+                        .replace(" ", "")
+                    )
                     if obozn in DIFFERENCE_ON_DRAW_MESSAGES:
                         return True
             return False
@@ -433,7 +545,9 @@ class SpecPathChecker(OboznSearcher):
         return False
 
 
-def fetch_obozn_and_execution(draw_obozn: DrawObozn) -> tuple[DrawObozn, DrawExecution, str | None] | None:
+def fetch_obozn_and_execution(
+    draw_obozn: DrawObozn,
+) -> tuple[DrawObozn, DrawExecution, str | None] | None:
     draw_info = re.search(r"(.+)(?:-)(0[13579][а-яёa]?$)", draw_obozn, re.I)
     if not draw_info:
         return None
@@ -441,5 +555,8 @@ def fetch_obozn_and_execution(draw_obozn: DrawObozn) -> tuple[DrawObozn, DrawExe
     obozn, execution = draw_info.groups()
     modification_symbol = ""
     if not execution[-1].isdigit():
-        execution, modification_symbol, = execution[:-1], execution[-1]
+        execution, modification_symbol, = (
+            execution[:-1],
+            execution[-1],
+        )
     return obozn, execution, modification_symbol

@@ -1,22 +1,23 @@
 import os
 
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore
+from PyQt5 import QtGui
+from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QSizePolicy
 
 
 class WidgetStyles:
     def __init__(self):
         # size policy section
-        self.line_edit_size_policy = \
-            QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Ignored)
-        self.size_policy_button = \
-            QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Ignored)
-        self.size_policy_button_2 = \
-            QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.date_policy = \
-            QSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
-        self.filter_policy = \
-           QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.line_edit_size_policy = QSizePolicy(
+            QSizePolicy.MinimumExpanding, QSizePolicy.Ignored
+        )
+        self.size_policy_button = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Ignored)
+        self.size_policy_button_2 = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.date_policy = QSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.MinimumExpanding
+        )
+        self.filter_policy = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
 
         # font section
         self.default_font = QtGui.QFont()
@@ -43,7 +44,17 @@ class WidgetBuilder(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         QtWidgets.QMainWindow.__init__(self, parent)
 
-    def make_button(self, *, text, command=None, size=None, font=None, size_policy=None, parent=None, enabled=True):
+    def make_button(
+        self,
+        *,
+        text,
+        command=None,
+        size=None,
+        font=None,
+        size_policy=None,
+        parent=None,
+        enabled=True,
+    ):
         button = QtWidgets.QPushButton(parent or self.central_widget)
         button.setEnabled(enabled)
         if size:
@@ -66,7 +77,9 @@ class WidgetBuilder(QtWidgets.QMainWindow):
         return line
 
     @staticmethod
-    def make_plain_text(*, text=None, status=None, parent=None, size_policy=None, font=None):
+    def make_plain_text(
+        *, text=None, status=None, parent=None, size_policy=None, font=None
+    ):
         plain_text = QtWidgets.QPlainTextEdit(parent)
         plain_text.setStatusTip(status)
         plain_text.setPlainText(text)
@@ -76,13 +89,14 @@ class WidgetBuilder(QtWidgets.QMainWindow):
         return plain_text
 
     def make_text_edit(
-            self, *,
-            text=None,
-            status=None,
-            parent=None,
-            placeholder=None,
-            size_policy=None,
-            font=None
+        self,
+        *,
+        text=None,
+        status=None,
+        parent=None,
+        placeholder=None,
+        size_policy=None,
+        font=None,
     ):
         text_edit = QtWidgets.QTextEdit(parent or self.central_widget)
         text_edit.setStatusTip(status)
@@ -95,9 +109,9 @@ class WidgetBuilder(QtWidgets.QMainWindow):
 
     def make_line(self, orientation, width=None):
         line = QtWidgets.QFrame(self.centralwidget)
-        if orientation == 'horizontal':
+        if orientation == "horizontal":
             line.setFrameShape(QtWidgets.QFrame.HLine)
-        elif orientation == 'vertical':
+        elif orientation == "vertical":
             line.setFrameShape(QtWidgets.QFrame.VLine)
         if width:
             line.setLineWidth(width)
@@ -165,7 +179,7 @@ class WidgetBuilder(QtWidgets.QMainWindow):
             array.append(name)
             widget.addItem(name)
         else:
-            self.send_error('Имя уже добавлено в список')
+            self.send_error("Имя уже добавлено в список")
 
     def send_error(self, message):
         error_dialog = QtWidgets.QErrorMessage(self)
@@ -173,7 +187,9 @@ class WidgetBuilder(QtWidgets.QMainWindow):
         error_dialog.showMessage(message)
         error_dialog.exec_()
 
-    def make_checkbox(self, *, font=None, text=None, activate=False, command=None, parent=None):
+    def make_checkbox(
+        self, *, font=None, text=None, activate=False, command=None, parent=None
+    ):
         if parent:
             widget = QtWidgets.QCheckBox(parent)
         else:
@@ -197,8 +213,11 @@ class WidgetBuilder(QtWidgets.QMainWindow):
 
     @staticmethod
     def get_items_in_list(list_widget):
-        return [str(list_widget.item(i).text()) for i in range(list_widget.count())
-                if list_widget.item(i).checkState()]
+        return [
+            str(list_widget.item(i).text())
+            for i in range(list_widget.count())
+            if list_widget.item(i).checkState()
+        ]
 
 
 class CheckableComboBox(QtWidgets.QComboBox):
@@ -234,11 +253,13 @@ class CheckableComboBox(QtWidgets.QComboBox):
 class ListWidget(QtWidgets.QListWidget):
     def __init__(self, parent):
         super().__init__(parent)
-        self.setSelectionMode(
-            QtWidgets.QAbstractItemView.ExtendedSelection
-        )
+        self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
-    def fill_list(self, *, draw_list,):
+    def fill_list(
+        self,
+        *,
+        draw_list,
+    ):
         font = QtGui.QFont()
         font.setFamily("Arial")
         font.setPointSize(9)
@@ -255,11 +276,19 @@ class ListWidget(QtWidgets.QListWidget):
         return [str(item.text()) for item in items]
 
     def get_selected_items(self):
-        items = (self.item(index) for index in range(self.count()) if self.item(index).checkState())
+        items = (
+            self.item(index)
+            for index in range(self.count())
+            if self.item(index).checkState()
+        )
         return items
 
     def get_not_selected_items(self):
-        items = (self.item(index) for index in range(self.count()) if not self.item(index).checkState())
+        items = (
+            self.item(index)
+            for index in range(self.count())
+            if not self.item(index).checkState()
+        )
         return items
 
     def remove_selected(self):
@@ -282,7 +311,7 @@ class MainListWidget(ListWidget):
     @staticmethod
     def open_item(item):
         path = item.text()
-        os.system(fr'explorer "{os.path.normpath(os.path.dirname(path))}"')
+        os.system(rf'explorer "{os.path.normpath(os.path.dirname(path))}"')
         os.startfile(path)
 
     def select_all(self):
@@ -315,7 +344,9 @@ class ExcludeFolderListWidget(ListWidget):
         super().__init__(parent)
 
     def add_folder(self):
-        folder_name, ok = QtWidgets.QInputDialog.getText(self, "Дилог ввода текста", "Введите название папки")
+        folder_name, ok = QtWidgets.QInputDialog.getText(
+            self, "Диалог ввода текста", "Введите название папки"
+        )
         if ok:
             self.fill_list(draw_list=[folder_name])
 
