@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections import namedtuple
 from dataclasses import dataclass
 from dataclasses import field
@@ -7,6 +9,7 @@ from enum import IntEnum
 from typing import Any
 from typing import NamedTuple
 from typing import NewType
+from typing import TypeAlias
 
 from pydantic import BaseModel
 
@@ -30,8 +33,10 @@ class DrawType(IntEnum):
 
 
 class ErrorType(Enum):
-    FILE_MISSING = auto()
-    FILE_NOT_OPENED = auto()
+    FILE_MISSING = auto()  # если не были найдены чертежи при поиске в базе данных
+    FILE_ERRORS = auto()  # различные ошибки при обработке файлов
+    FILE_NAMING = auto()  # ошибки возникающие когда файлы
+    # имеют одинаковые обозначения и разные наименований
 
 
 @dataclass
@@ -103,3 +108,6 @@ class DoublePathsData:
 class MergerData:
     delete_single_draws_after_merge_checkbox: bool
     specification_path: FilePath | None = None
+
+
+DrawErrorsType: TypeAlias = list[str | tuple[FileName, DrawObozn]]

@@ -6,8 +6,8 @@ from unittest.mock import patch
 import pytest
 
 from programm.kompas_api import KompasAPI
-from programm.kompas_api import NoExecutions
-from programm.kompas_api import NotSupportedSpecType
+from programm.kompas_api import NoExecutionsError
+from programm.kompas_api import NotSupportedSpecTypeError
 from programm.kompas_api import OboznSearcher
 from programm.kompas_api import SpecType
 from programm.schemas import DrawData
@@ -118,7 +118,7 @@ class TestOboznSearcher:
         kompas_api.create_spc_object.return_value = ("random", Mock())
 
         # then: expect to rise exception and close document
-        with pytest.raises(NotSupportedSpecType):
+        with pytest.raises(NotSupportedSpecTypeError):
             OboznSearcher(spec_path, kompas_api)
             kompas_api.doc.Close.assert_called_once()
 
@@ -150,7 +150,7 @@ class TestOboznSearcher:
             # given: spec without_execution
 
             # when: called method to get all executions
-            with pytest.raises(NoExecutions):
+            with pytest.raises(NoExecutionsError):
                 obozn_searcher_group.get_all_spec_executions()
 
     def test_should_user_correct_function_by_oformlenie(
@@ -478,7 +478,7 @@ class TestOboznSearcher:
             )
 
             # when: called method to get spec data
-            with pytest.raises(NoExecutions):
+            with pytest.raises(NoExecutionsError):
                 obozn_searcher.get_obozn_from_specification()
 
     def test_group_spec_to_get_only_assemblies(

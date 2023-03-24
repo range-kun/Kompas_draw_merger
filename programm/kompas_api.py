@@ -47,15 +47,15 @@ class StampCell(enum.IntEnum):
     CONSTRUCTOR_DATE_CELL = 130
 
 
-class DocNotOpened(Exception):
+class DocNotOpenedError(Exception):
     pass
 
 
-class NoExecutions(Exception):
+class NoExecutionsError(Exception):
     pass
 
 
-class NotSupportedSpecType(Exception):
+class NotSupportedSpecTypeError(Exception):
     pass
 
 
@@ -144,7 +144,7 @@ class KompasAPI:
             file_path, False, False
         )  # открываем документ, в невидимом режиме для записи
         if doc is None:
-            raise DocNotOpened
+            raise DocNotOpenedError
         if (
             os.path.splitext(file_path)[1] == ".cdw"
         ):  # если чертёж, то используем интерфейс для чертежа
@@ -169,7 +169,7 @@ class KompasAPI:
         try:
             doc, doc_2d = self.get_document_api(file_path)
             yield doc_2d
-        except DocNotOpened:
+        except DocNotOpenedError:
             _, filename = os.path.split(file_path)
             yield f"Не удалось открыть файл {filename} возможно файл создан в более новой версии \n"
         finally:
@@ -279,7 +279,7 @@ class OboznSearcher:
             SpecType.GROUP_SPEC,
         ]:  # работаем только в простой и групповой
             self.doc.Close(self.kompas_api.const.kdDoNotSaveChanges)
-            raise NotSupportedSpecType(
+            raise NotSupportedSpecTypeError(
                 f"\n{os.path.basename(self.spec_path)} - указан не поддерживаемый тип спецификации"
             )
 
@@ -306,7 +306,7 @@ class OboznSearcher:
                 break
 
         if not executions:
-            raise NoExecutions
+            raise NoExecutionsError
 
         executions["Все исполнения"] = WITHOUT_EXECUTION
 
@@ -374,8 +374,8 @@ class OboznSearcher:
         if line_section == DrawType.SPEC_DRAW:
             if self.is_detail(draw_obozn) is True:
                 message = (
-                    f"\nВозможно указана деталь в качестве спецификации "
-                    f"-> {self.spec_path} ||| {draw_obozn} \n"
+                    f"Возможно указана деталь в качестве сборки "
+                    f"-> {self.spec_path} ||| Обозначение -> {draw_obozn}"
                 )
                 self.errors.append(message)
                 return
@@ -439,9 +439,9 @@ class OboznSearcher:
                     ):
                         return column_number
             except AttributeError:
-                raise NoExecutions
+                raise NoExecutionsError
             break
-        raise NoExecutions
+        raise NoExecutionsError
 
     def _get_obozn_from_group_spec(
         self,
@@ -499,7 +499,7 @@ class OboznSearcher:
                 self._get_cell_data(line, self.OBOZN_COLUMN).lower().replace(" ", "")
             )
             draw_name = DrawName(
-                self._get_cell_data(line, self.NAME_COLUMN).lower().replace(" ", "")
+                self._get_cell_data(line, self.NAME_COLUMN).lower().strip()
             )
             size = self._get_cell_data(line, self.SIZE_COLUMN).lower().replace(" ", "")
         except AttributeError:

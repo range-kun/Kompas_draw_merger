@@ -8,6 +8,7 @@ from datetime import datetime
 from operator import itemgetter
 
 from programm.kompas_api import fetch_obozn_and_execution
+from programm.schemas import DrawErrorsType
 from programm.schemas import DrawExecution
 from programm.schemas import DrawObozn
 from programm.schemas import ErrorType
@@ -76,9 +77,7 @@ class MergerFolderData:
                 )
             )
         else:
-            pdf_file_name = (
-                f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
-            )
+            pdf_file_name = f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
             return FilePath(
                 os.path.join(os.path.dirname(self.single_draw_dir), pdf_file_name)
             )
@@ -150,9 +149,7 @@ class MergerFolderData:
 
     def _fetch_single_draw_dir(self) -> FilePath:
         prefix_number = self._get_current_file_prefix_number()
-        _single_draw_dir = (
-            rf"{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}"
-        )
+        _single_draw_dir = rf"{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}"
         if self._need_to_be_split:
             _single_draw_dir += rf"\{self._single_draw_dir_name}"
         else:
@@ -216,14 +213,26 @@ class DrawOboznCreation:
 
 
 class ErrorsPrinter:
-    def __init__(self, missing_list: list, error_type: ErrorType):
-        self._missing_list = missing_list
-        self._error_type = error_type
+    def __init__(self, errors_info: dict[ErrorType, DrawErrorsType]):
+        self._errors_info = errors_info
         self._message_for_file: str | None = None
         self._title_for_file: str | None = None
+        self._clean_dict_from_empty_values()
+
+    def _clean_dict_from_empty_values(self):
+        self._errors_info = {
+            error_type: errors_info
+            for error_type, errors_info in self._errors_info.items()
+            if errors_info
+        }
 
     def create_error_message(self) -> tuple[str, str]:
-        if len(self._missing_list) > 15:
+        flat_error_list = [
+            error_message
+            for error_list in self._errors_info.values()
+            for error_message in error_list
+        ]
+        if len(flat_error_list) > 15:
             return (
                 "Печать ошибок",
                 (
@@ -231,37 +240,61 @@ class ErrorsPrinter:
                     " велико, хотите сохранить отчет в текстовый файл?"
                 ),
             )
-        return self.proceed_errors_list()
+        return self.proceed_errors_info()
 
     @property
     def message_for_file(self) -> str:
         if self._message_for_file is None:
-            _, self._message_for_file = self.proceed_errors_list()
+            _, self._message_for_file = self.proceed_errors_info()
         return self._message_for_file
 
-    def proceed_errors_list(self) -> tuple[str, str]:
-        one_line_messages, grouped_messages = self._sort_messages_by_type()
-        missing_message = self._group_missing_files_info(grouped_messages)
-        if self._error_type == ErrorType.FILE_MISSING:
-            title, message = self._create_missing_files_message(
-                missing_message, one_line_messages
+    def proceed_errors_info(self) -> tuple[str, str]:
+        number_of_iteration = 1
+        error_message = ""
+        for error_type, errors_list in self._errors_info.items():
+            title, temp_error_message = self.proceed_errors_list(
+                error_type, errors_list
             )
-        elif self._error_type == ErrorType.FILE_NOT_OPENED:
-            title, message = self._create_file_errors_message(
-                missing_message, one_line_messages
-            )
+            error_message += temp_error_message
+            number_of_iteration += 1
+
+        if number_of_iteration > 1:
+            title = "Ошибки при обработке."
+
+        error_message += "\nСохранить список?"
+        self._title_for_file, self._message_for_file = title, error_message
+        return title, error_message
+
+    def proceed_errors_list(
+        self, error_type: ErrorType, errors_info: DrawErrorsType
+    ) -> tuple[str, str]:
+        if error_type in [ErrorType.FILE_MISSING, ErrorType.FILE_NAMING]:
+            string_of_errors = self._group_missing_files_info(errors_info)
         else:
+            string_of_errors = "----" + "\n----".join(errors_info)
+        function_on_error = {
+            ErrorType.FILE_MISSING: self._create_missing_files_message,
+            ErrorType.FILE_ERRORS: self._create_file_errors_message,
+            ErrorType.FILE_NAMING: self._create_different_name_for_same_obozn_errors_message,
+        }
+
+        function = function_on_error.get(error_type)
+        if function is None:
             raise NotImplementedError
+        else:
+            title, message = function(string_of_errors)
+
         self._title_for_file, self._message_for_file = title, message
 
         return title, message
 
+    @staticmethod
     def _sort_messages_by_type(
-        self,
+        error_list: list[str | tuple[FileName, DrawObozn]]
     ) -> tuple[list[str], list[tuple[FileName, DrawObozn]]]:
         one_line_messages = []
         grouped_messages: list[tuple[FileName, DrawObozn]] = []
-        for error in self._missing_list:
+        for error in error_list:
             if type(error) == str:
                 one_line_messages.append(error)
             else:
@@ -273,33 +306,38 @@ class ErrorsPrinter:
     def _group_missing_files_info(
         grouped_messages: list[tuple[FileName, DrawObozn]]
     ) -> str:
-        grouped_list = itertools.groupby(grouped_messages, itemgetter(0))
+        grouped_data = itertools.groupby(grouped_messages, itemgetter(0))
         grouped_list_message = [
-            key + ":\n" + "\n".join(["----" + v for k, v in value])
-            for key, value in grouped_list
+            header + ":\n" + "\n".join(["----" + message for _, message in value])
+            for header, value in grouped_data
         ]
         return "\n".join(grouped_list_message)
 
     @staticmethod
-    def _create_missing_files_message(
-        missing_message: str, one_line_messages: list[str]
-    ) -> tuple[str, str]:
+    def _create_missing_files_message(string_of_errors: str) -> tuple[str, str]:
         window_title = "Отсутствующие чертежи"
         error_message = (
-            f"Не были найдены следующи чертежи:\n{missing_message} {''.join(one_line_messages)}"
-            f"\nСохранить список?"
+            f"\nНЕ БЫЛИ НАЙДЕНЫ СЛЕДУЮЩИ ЧЕРТЕЖИ:\n" f"\n{string_of_errors}\n"
         )
         return window_title, error_message
 
     @staticmethod
-    def _create_file_errors_message(
-        missing_message: str, one_line_messages: list[str]
-    ) -> tuple[str, str]:
+    def _create_file_errors_message(string_of_errors: str) -> tuple[str, str]:
         window_title = "Ошибки при обработке файлов"
         error_message = (
-            f"Были получены следующие ошибки при "
-            f"обработке файлов:\n{missing_message} {''.join(one_line_messages)}"
-            f"\nСохранить список?"
+            f"\nБЫЛИ ПОЛУЧЕНЫ СЛЕДУЮЩИЕ ОШИБКИ ПРИ ОБРАБОТКЕ ФАЙЛОВ:\n"
+            f"\n{string_of_errors}\n"
+        )
+        return window_title, error_message
+
+    @staticmethod
+    def _create_different_name_for_same_obozn_errors_message(
+        string_of_errors: str,
+    ) -> tuple[str, str]:
+        window_title = "Файлы с одинаковым обозначением имеют разные наименования"
+        error_message = (
+            f"\nФАЙЛЫ С ОДИНАКОВЫМ ОБОЗНАЧЕНИЕМ ИМЕЮТ РАЗНЫЕ НАИМЕНОВАНИЯ:\n "
+            f"\n{string_of_errors}\n"
         )
         return window_title, error_message
 

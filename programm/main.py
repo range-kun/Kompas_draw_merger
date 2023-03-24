@@ -32,8 +32,8 @@ from programm import utils
 from programm.kompas_api import Converter
 from programm.kompas_api import CoreKompass
 from programm.kompas_api import KompasAPI
-from programm.kompas_api import NoExecutions
-from programm.kompas_api import NotSupportedSpecType
+from programm.kompas_api import NoExecutionsError
+from programm.kompas_api import NotSupportedSpecTypeError
 from programm.kompas_api import OboznSearcher
 from programm.kompas_api import SpecPathChecker
 from programm.kompas_api import StampCell
@@ -42,6 +42,7 @@ from programm.pop_up_windows import RadioButtonsWindow
 from programm.pop_up_windows import SaveType
 from programm.pop_up_windows import SettingsWindow
 from programm.schemas import DoublePathsData
+from programm.schemas import DrawErrorsType
 from programm.schemas import DrawExecution
 from programm.schemas import DrawObozn
 from programm.schemas import ErrorType
@@ -97,7 +98,6 @@ class UiMerger(WidgetBuilder):
         self.current_progress = 0
         self.progress_step = 0
         self.data_queue: queue.Queue = queue.Queue()
-        self.missing_list: list[tuple | str] = []
         self.draw_list: list[FilePath] = []
 
         self.bypassing_folders_inside_previous_status = True
@@ -478,16 +478,15 @@ class UiMerger(WidgetBuilder):
 
     def handle_search_path_thread_results(
         self,
-        missing_list: list[str | tuple],
+        errors_info: dict[ErrorType, DrawErrorsType],
         draw_list: list[FilePath],
         need_to_merge: bool,
     ):
         self.status_bar.showMessage("Завершено получение файлов из спецификации")
-        self.missing_list.extend(missing_list)
         self.draw_list = draw_list
 
-        if self.missing_list:
-            self.print_out_errors(ErrorType.FILE_MISSING)
+        if errors_info:
+            self.print_out_errors(errors_info)
         if self.draw_list:
             if need_to_merge:
                 self.change_list_widget_state(
@@ -503,25 +502,28 @@ class UiMerger(WidgetBuilder):
                         self.list_widget.fill_list, draw_list=draw_list
                     )
 
-    def print_out_errors(self, error_type: ErrorType):
+    def print_out_errors(self, errors_info: dict[ErrorType, DrawErrorsType]):
         def save_errors_message_to_txt():
             filename = QtWidgets.QFileDialog.getSaveFileName(
                 self, "Сохранить файл", ".", "txt(*.txt)"
             )[0]
             if not filename:
                 return
+
             try:
                 with open(filename, "w") as file:
                     file.write(errors_printer.message_for_file)
             except Exception:
                 self.send_error("Ошибка записи")
 
-        errors_printer = utils.ErrorsPrinter(self.missing_list, error_type)
-        title, message = errors_printer.create_error_message()
-        self.missing_list = []
+        errors_printer = utils.ErrorsPrinter(errors_info)
+        title, message_for_window = errors_printer.create_error_message()
 
         choice = QtWidgets.QMessageBox.question(
-            self, title, message, QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            self,
+            title,
+            message_for_window,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
         )
         if choice != QtWidgets.QMessageBox.Yes:
             return
@@ -607,8 +609,7 @@ class UiMerger(WidgetBuilder):
         self.change_list_widget_state(self.list_widget.clear)
         self.change_list_widget_state(self.list_widget.fill_list, draw_list=draw_list)
         if errors_list:
-            self.missing_list = errors_list
-            self.print_out_errors(ErrorType.FILE_NOT_OPENED)
+            self.print_out_errors({ErrorType.FILE_ERRORS: errors_list})
         if filter_only:
             self.current_progress = 0
             self.progress_bar.setValue(int(self.current_progress))
@@ -925,14 +926,14 @@ class UiMerger(WidgetBuilder):
         self.data_base_thread.status.connect(self.status_bar.showMessage)
         self.data_base_thread.progress_bar.connect(self.progress_bar.setValue)
         self.data_base_thread.increase_step.connect(self.increase_step)
-        self.data_base_thread.finished.connect(self.handle_data_base_creation_thread)
+        self.data_base_thread.finished.connect(self.proceed_database_thread_results)
 
         self.data_base_thread.start()
 
-    def handle_data_base_creation_thread(
+    def proceed_database_thread_results(
         self,
         data_base: dict[DrawObozn, list[FilePath]],
-        errors_list: list[str],
+        errors_info: dict[ErrorType, DrawErrorsType],
         need_to_merge=False,
     ):
         self.progress_bar.setValue(0)
@@ -941,10 +942,7 @@ class UiMerger(WidgetBuilder):
         if not data_base:
             self.send_error("Нету файлов с обозначением в штампе")
             return
-
-        if errors_list:
-            self.missing_list = errors_list
-            self.print_out_errors(ErrorType.FILE_NOT_OPENED)
+        self.print_out_errors(errors_info)
 
         self.data_base_file = data_base
         self.choose_database_storage_method()
@@ -1304,11 +1302,11 @@ class FilterThread(QThread):
                         ):
                             file_is_ok = False
                             break
-            except kompas_api.DocNotOpened:
+            except kompas_api.DocNotOpenedError:
                 self.errors_list.append(
                     (
                         f"Не удалось открыть файл {file_path} возможно "
-                        f"файл создан в более новой версии или был перемещен\n"
+                        f"файл создан в более новой версии или был перемещен"
                     )
                 )
             if file_is_ok:
@@ -1341,7 +1339,7 @@ class FilterThread(QThread):
 class DataBaseThread(QThread):
     increase_step = pyqtSignal(bool)
     status = pyqtSignal(str)
-    finished = pyqtSignal(dict, list, bool)
+    finished = pyqtSignal(dict, dict, bool)
     progress_bar = pyqtSignal(int)
     calculate_step = pyqtSignal(int, bool, bool)
     buttons_enable = pyqtSignal(bool)
@@ -1358,14 +1356,17 @@ class DataBaseThread(QThread):
         self.kompas_thread_api = kompas_thread_api
 
         self.draws_data_base: dict[DrawObozn, list[FilePath]] = {}
-        self.errors_list: list = []
+        self.errors_dict: dict[ErrorType:DrawErrorsType] = {
+            ErrorType.FILE_ERRORS: [],
+            ErrorType.FILE_NAMING: [],
+        }
         QThread.__init__(self)
 
     def run(self):
         pythoncom.CoInitializeEx(0)
         self.shell = win32com.client.gencache.EnsureDispatch(
             "Shell.Application", 0
-        )  # подключаемся к windows
+        )  # подключаемся к windows shell
 
         self.buttons_enable.emit(False)
         obozn_meta_number = self._get_meta_obozn_number(
@@ -1386,7 +1387,7 @@ class DataBaseThread(QThread):
 
         self.progress_bar.emit(0)
         self.buttons_enable.emit(True)
-        self.finished.emit(self.draws_data_base, self.errors_list, self.need_to_merge)
+        self.finished.emit(self.draws_data_base, self.errors_dict, self.need_to_merge)
 
     def _get_meta_obozn_number(self, dir_name: str) -> int | None:
         dir_obj = self.shell.NameSpace(dir_name)  # получаем объект папки windows shell
@@ -1443,8 +1444,8 @@ class DataBaseThread(QThread):
 
     def _proceed_double_paths(self, double_paths_list: list[DoublePathsData]):
         """
-        При создании чертежей возможно их дублирование в
-        базе, данный код проверяет наличие таких чертежей
+        При создании чертежей возможно наличие одинаковых обозначений для деталей
+        с разным названием в базе, данный код проверяет наличие таких чертежей.
         """
 
         def create_output_error_list() -> list[tuple[DrawObozn, FilePath]]:
@@ -1469,7 +1470,9 @@ class DataBaseThread(QThread):
                     continue
 
                 if not self._confirm_same_draw_name_and_obozn(draw_paths):
-                    self.errors_list.extend(create_output_error_list())
+                    self.errors_dict[ErrorType.FILE_NAMING].extend(
+                        create_output_error_list()
+                    )
                     del self.draws_data_base[path_data.draw_obozn]
                     break
                 correct_paths.append(self._get_right_path(draw_paths))
@@ -1516,11 +1519,11 @@ class DataBaseThread(QThread):
                     draws_data.append(
                         (path, stamp_time_of_creation, file_date_of_creation)
                     )
-            except kompas_api.DocNotOpened:
-                self.errors_list.append(
+            except kompas_api.DocNotOpenedError:
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
                     (
                         f"Не удалось открыть файл {path} возможно"
-                        f" файл создан в более новой версии или был перемещен\n"
+                        f" файл создан в более новой версии или был перемещен"
                     )
                 )
         sorted_paths = sorted(
@@ -1542,7 +1545,7 @@ class SearchPathsThread(QThread):
     # this thread will fill list widget with system paths from spec, by they obozn_in_specification
     # parameter, using data_base_file
     status = pyqtSignal(str)
-    finished = pyqtSignal(list, list, bool)
+    finished = pyqtSignal(dict, list, bool)
     buttons_enable = pyqtSignal(bool)
     errors = pyqtSignal(str)
     choose_spec_execution = pyqtSignal(dict)
@@ -1558,7 +1561,10 @@ class SearchPathsThread(QThread):
         kompas_thread_api: ThreadKompasAPI,
     ):
         self.draw_paths: list[FilePath] = []
-        self.missing_list: list = []
+        self.errors_dict: dict[ErrorType:DrawErrorsType] = {
+            ErrorType.FILE_ERRORS: [],
+            ErrorType.FILE_MISSING: [],
+        }
         self.need_to_merge = need_to_merge
         self.specification_path = specification_path
         self.without_sub_assembles = only_one_specification
@@ -1581,10 +1587,10 @@ class SearchPathsThread(QThread):
             FileExistsError,
             ExecutionNotSelectedError,
             SpecificationEmptyError,
-            NotSupportedSpecType,
+            NotSupportedSpecTypeError,
         ) as e:
             self.errors.emit(getattr(e, "message", str(e)))
-        except NoExecutions:
+        except NoExecutionsError:
             self.errors.emit(
                 f"{os.path.basename(self.specification_path)} - Для групповой спецификации"
                 f"не были получены исполнения"
@@ -1593,7 +1599,7 @@ class SearchPathsThread(QThread):
             self.process_specification(obozn_in_specification)
 
         self.buttons_enable.emit(True)
-        self.finished.emit(self.missing_list, self.draw_paths, self.need_to_merge)
+        self.finished.emit(self.errors_dict, self.draw_paths, self.need_to_merge)
 
     def _get_obozn_from_specification(self):
         def select_execution(_executions: dict[DrawExecution, int]):
@@ -1618,7 +1624,7 @@ class SearchPathsThread(QThread):
         obozn_in_specification, errors = obozn_searhcer.get_obozn_from_specification(
             column_numbers
         )
-        self.missing_list.extend(errors)
+        self.errors_dict[ErrorType.FILE_ERRORS].extend(errors)
 
         if not obozn_in_specification:
             raise SpecificationEmptyError(
@@ -1667,9 +1673,8 @@ class SearchPathsThread(QThread):
                 )
                 or ""
             )
-            if (
-                draw_file_path and draw_file_path not in draw_paths
-            ):  # одинаковые пути для одной спеки не добавляем
+            if draw_file_path and draw_file_path not in draw_paths:
+                # одинаковые пути для одной спеки не добавляем
                 draw_paths.append(draw_file_path)
         return draw_paths
 
@@ -1696,18 +1701,20 @@ class SearchPathsThread(QThread):
                     spec_obozn=draw_data.draw_obozn,
                 )
                 response = obozn_searcher.get_obozn_from_specification()
-            except (FileExistsError, NotSupportedSpecType) as e:
-                self.missing_list.append(getattr(e, "message", str(e)))
+            except (FileExistsError, NotSupportedSpecTypeError) as e:
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
+                    getattr(e, "message", str(e))
+                )
                 continue
-            except NoExecutions:
-                self.missing_list.append(
-                    f"\n{os.path.basename(self.specification_path)} - Для групповой спецификации"
+            except NoExecutionsError:
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
+                    f"{os.path.basename(self.specification_path)} - Для групповой спецификации"
                     f"не были получены исполнения, обновите базу чертежей"
                 )
                 continue
             draws_in_specification, errors = response
             if errors:
-                self.missing_list.extend(errors)
+                self.errors_dict[ErrorType.FILE_ERRORS].extend(errors)
             self.draw_paths.append(spw_file_path)
             self.recursive_path_searcher(spw_file_path, draws_in_specification)
 
@@ -1749,7 +1756,7 @@ class SearchPathsThread(QThread):
                     draw_name.capitalize().replace("\n", " "),
                 ]
                 missing_draw_info = (spec_path, " - ".join(missing_draw))
-                self.missing_list.append(missing_draw_info)
+                self.errors_dict[ErrorType.FILE_MISSING].append(missing_draw_info)
                 return None
         else:
             draw_path = self.get_correct_draw_path(draw_path, file_extension)
@@ -1758,8 +1765,8 @@ class SearchPathsThread(QThread):
             return draw_path
         else:
             if self.error == 1:  # print this message only once
-                self.missing_list.append(
-                    f"\nПуть {draw_path} является недействительным, обновите базу чертежей"
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
+                    f"Путь {draw_path} является недействительным, обновите базу чертежей"
                 )
                 self.error += 1
             return None
@@ -1778,13 +1785,13 @@ class SearchPathsThread(QThread):
                     _spec_path, self._kompas_api, execution
                 ).verify_its_correct_spec_path()
             except FileExistsError:
-                self.missing_list.append(
-                    f"\nПуть {_spec_path} является недействительным, обновите базу чертежей"
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
+                    f"Путь {_spec_path} является недействительным, обновите базу чертежей"
                 )
-            except NoExecutions:
-                self.missing_list.append(
+            except NoExecutionsError:
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
                     (
-                        f"\n{_spec_path} - Для групповой спецификации "
+                        f"{_spec_path} - Для групповой спецификации "
                         f"не были получены исполнения, обновите базу чертежей"
                     )
                 )
