@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections import namedtuple
 from dataclasses import dataclass
 from dataclasses import field
@@ -10,8 +11,6 @@ from typing import Any
 from typing import NamedTuple
 from typing import NewType
 from typing import TypeAlias
-
-from pydantic import BaseModel
 
 
 FilePath = NewType("FilePath", str)
@@ -51,7 +50,8 @@ class SpecSectionData:
     draw_names: list[DrawData]
 
 
-class UserSettings(BaseModel):
+@dataclass
+class UserSettings:
     except_folders_list: list[str] | None
     constructor_list: list[str] | None
     checker_list: list[str] | None
@@ -61,6 +61,13 @@ class UserSettings(BaseModel):
     add_default_watermark: bool = True
     split_file_by_size: bool = False
     auto_save_folder: bool = False
+    remove_duplicates: bool = False
+
+    @classmethod
+    def from_dict(cls, env):
+        return cls(
+            **{k: v for k, v in env.items() if k in inspect.signature(cls).parameters}
+        )
 
 
 @dataclass
@@ -77,6 +84,7 @@ class SettingsData:
     watermark_path: FilePath | None = None
     watermark_position: list[int] | None = None
     split_file_by_size: bool = False
+    remove_duplicates: bool = False
     save_type: SaveType = SaveType.AUTO_SAVE_FOLDER
     except_folders_list: list[str] | None = None
 

@@ -31,5 +31,7 @@
       170
     ],
   "sort_files": false,
-  "auto_save_folder": false
+  "auto_save_folder": false,
+  "remove_duplicates": false,
+  "split_file_by_size": false
 }

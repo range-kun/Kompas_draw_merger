@@ -66,6 +66,7 @@ class SettingsWindow(QtWidgets.QDialog):
             watermark_path=self._get_watermark_path(),
             watermark_position=self.watermark_position,
             split_file_by_size=self._split_files_by_size_checkbox.isChecked(),
+            remove_duplicates=self._remove_duplicates_checkbox.isChecked(),
             save_type=self._get_save_type(),
             except_folders_list=self._exclude_folder_list_widget.get_items_text_data(),
         )
@@ -108,7 +109,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self._setup_filter_by_checker_section()
         self._setup_filter_by_gauge_section()
         self._setup_watermark_section()
-        self._setup_split_by_size_section()
+        self._setup_additional_settings()
         self._setup_save_file_path_section()
         self._setup_exclude_folders_section()
         self._setup_window_settings()
@@ -231,13 +232,20 @@ class SettingsWindow(QtWidgets.QDialog):
             self._custom_watermark_path_radio_button
         )
 
-    def _setup_split_by_size_section(self):
+    def _setup_additional_settings(self):
         self._split_files_by_size_checkbox = self.construct_class.make_checkbox(
             text="Разбить на файлы по размерам",
             font=self._arial_12_font,
             parent=self.grid_layout_widget,
         )
         self.grid_layout.addWidget(self._split_files_by_size_checkbox, 11, 0, 1, 1)
+
+        self._remove_duplicates_checkbox = self.construct_class.make_checkbox(
+            text="Удалить повторяющиеся чертежи",
+            font=self._arial_12_font,
+            parent=self.grid_layout_widget,
+        )
+        self.grid_layout.addWidget(self._remove_duplicates_checkbox, 11, 1, 1, 3)
 
     def _setup_save_file_path_section(self):
         self._manually_choose_save_folder_radio_button = (
@@ -328,7 +336,7 @@ class SettingsWindow(QtWidgets.QDialog):
         try:
             if os.stat(settings_path).st_size > 0:
                 with open(settings_path, encoding="utf-8-sig") as data:
-                    obj = json.load(data)
+                    json_settings = json.load(data)
         except OSError:
             self.construct_class.send_error(
                 f"Файл settings.json \n отсутствует {settings_path}"
@@ -340,7 +348,7 @@ class SettingsWindow(QtWidgets.QDialog):
             )
             return None
 
-        user_settings = UserSettings.parse_obj(obj)
+        user_settings = UserSettings.from_dict(json_settings)
         return user_settings
 
     def _fill_widgets_with_settings(self, user_settings: UserSettings):
@@ -373,6 +381,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self._set_user_watermark_path()
 
         self._split_files_by_size_checkbox.setChecked(user_settings.split_file_by_size)
+        self._remove_duplicates_checkbox.setChecked(user_settings.remove_duplicates)
         self._select_auto_folder(user_settings.auto_save_folder)
 
     def _switch_date_input_filter(self):

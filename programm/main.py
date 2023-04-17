@@ -462,12 +462,13 @@ class UiMerger(WidgetBuilder):
 
         only_one_specification = not self.bypassing_sub_assemblies_chekcbox.isChecked()
         self.search_path_thread = SearchPathsThread(
-            self.specification_path,
-            self.data_base_file,
-            only_one_specification,
-            need_to_merge,
-            self.data_queue,
+            specification_path=self.specification_path,
+            data_base_file=self.data_base_file,
+            only_one_specification=only_one_specification,
+            need_to_merge=need_to_merge,
+            data_queue=self.data_queue,
             kompas_thread_api=self.kompas_api.collect_thread_api(ThreadKompasAPI),
+            settings_window_data=self.settings_window_data,
         )
         self.search_path_thread.buttons_enable.connect(self.switch_button_group)
         self.search_path_thread.finished.connect(self.handle_search_path_thread_results)
@@ -743,7 +744,7 @@ class UiMerger(WidgetBuilder):
             if self.search_by_spec_radio_button.isChecked():
                 main_name = Path(self.specification_path).stem
             return schemas.MergerData(
-                delete_single_draws_after_merge_checkbox=self.delete_single_draws_after_merge_checkbox.isChecked(),
+                self.delete_single_draws_after_merge_checkbox.isChecked(),
                 specification_path=main_name,
             )
 
@@ -756,12 +757,12 @@ class UiMerger(WidgetBuilder):
         )
         thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
         self.merge_thread = MergeThread(
-            draws_list,
-            search_path,
-            self.data_queue,
-            thread_api,
-            self.settings_window_data,
-            collect_merge_data(),
+            files=draws_list,
+            directory=search_path,
+            data_queue=self.data_queue,
+            kompas_thread_api=thread_api,
+            settings_window_data=self.settings_window_data,
+            merger_data=collect_merge_data(),
         )
         self.merge_thread.buttons_enable.connect(self.switch_button_group)
         self.merge_thread.increase_step.connect(self.increase_step)
@@ -1042,6 +1043,7 @@ class MergeThread(QThread):
 
     def __init__(
         self,
+        *,
         files: list[FilePath],
         directory: FilePath,
         data_queue: queue.Queue,
@@ -1376,9 +1378,8 @@ class DataBaseThread(QThread):
             self.errors.emit("Ошибка при создания базы чертежей")
             return
 
-        self._kompas_api = KompasAPI(
-            self.kompas_thread_api
-        )  # нужно создавать именно в run для правильной работы
+        self._kompas_api = KompasAPI(self.kompas_thread_api)
+        # нужно создавать именно в run для правильной работы
         self._create_data_base(obozn_meta_number)
 
         self.progress_bar.emit(0)
@@ -1503,7 +1504,7 @@ class DataBaseThread(QThread):
     def _get_right_path(self, file_paths: list[FilePath]) -> FilePath:
         """
         Сначала сравнивает даты в штампе и выбираем самый поздний.
-        Если они равны считывает дату создания и выбирает наиболее раннюю версию
+        Если они равны считывает дату создания файла и выбирает наиболее раннюю версию
         """
         if len(file_paths) < 2:
             return file_paths[0]
@@ -1515,10 +1516,6 @@ class DataBaseThread(QThread):
                     stamp_time_of_creation = self._get_stamp_time_of_creation(
                         draw_stamp
                     )
-                    file_date_of_creation = os.stat(path).st_ctime
-                    draws_data.append(
-                        (path, stamp_time_of_creation, file_date_of_creation)
-                    )
             except kompas_api.DocNotOpenedError:
                 self.errors_dict[ErrorType.FILE_ERRORS].append(
                     (
@@ -1526,6 +1523,9 @@ class DataBaseThread(QThread):
                         f" файл создан в более новой версии или был перемещен"
                     )
                 )
+                continue
+            file_date_of_creation = os.stat(path).st_ctime
+            draws_data.append((path, stamp_time_of_creation, file_date_of_creation))
         sorted_paths = sorted(
             draws_data, key=lambda draw_data: (-draw_data[1], draw_data[2])
         )
@@ -1553,12 +1553,14 @@ class SearchPathsThread(QThread):
 
     def __init__(
         self,
+        *,
         specification_path: FilePath,
         data_base_file,
         only_one_specification: bool,
         need_to_merge: bool,
         data_queue: queue.Queue,
         kompas_thread_api: ThreadKompasAPI,
+        settings_window_data: schemas.SettingsData,
     ):
         self.draw_paths: list[FilePath] = []
         self.errors_dict: dict[ErrorType:DrawErrorsType] = {
@@ -1569,8 +1571,9 @@ class SearchPathsThread(QThread):
         self.specification_path = specification_path
         self.without_sub_assembles = only_one_specification
         self.data_base_file = data_base_file
-        self.error = 1
+        self.error_counter = 1
         self.data_queue = data_queue
+        self.remove_duplicate_paths = settings_window_data.remove_duplicates
 
         self.kompas_thread_api = kompas_thread_api
         QThread.__init__(self)
@@ -1597,7 +1600,8 @@ class SearchPathsThread(QThread):
             )
         else:
             self.process_specification(obozn_in_specification)
-
+        if self.remove_duplicate_paths:
+            self.draw_paths = list(dict.fromkeys(self.draw_paths))
         self.buttons_enable.emit(True)
         self.finished.emit(self.errors_dict, self.draw_paths, self.need_to_merge)
 
@@ -1637,9 +1641,9 @@ class SearchPathsThread(QThread):
     def process_specification(self, draws_in_specification: list[SpecSectionData]):
         self.draw_paths.append(self.specification_path)
         self.recursive_path_searcher(self.specification_path, draws_in_specification)
-        # have to put self.obozn_in_specification in because
-        # function calls herself with different input data
 
+    # have to put self.obozn_in_specification in because
+    # function calls herself with different input data
     def recursive_path_searcher(
         self, spec_path: FilePath, obozn_in_specification: list[SpecSectionData]
     ):
@@ -1673,6 +1677,7 @@ class SearchPathsThread(QThread):
                 )
                 or ""
             )
+
             if draw_file_path and draw_file_path not in draw_paths:
                 # одинаковые пути для одной спеки не добавляем
                 draw_paths.append(draw_file_path)
@@ -1764,11 +1769,11 @@ class SearchPathsThread(QThread):
         if os.path.exists(draw_path):
             return draw_path
         else:
-            if self.error == 1:  # print this message only once
+            if self.error_counter == 1:  # print this message only once
                 self.errors_dict[ErrorType.FILE_ERRORS].append(
                     f"Путь {draw_path} является недействительным, обновите базу чертежей"
                 )
-                self.error += 1
+                self.error_counter += 1
             return None
 
     def try_fetch_spec_path(self, spec_obozn: DrawObozn) -> FilePath | None:
