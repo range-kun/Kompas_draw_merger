@@ -77,10 +77,10 @@ class MergerFolderData:
                 )
             )
         else:
-            pdf_file_name = f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
-            return FilePath(
-                os.path.join(os.path.dirname(self.single_draw_dir), pdf_file_name)
+            pdf_file_name = (
+                f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
             )
+            return FilePath(os.path.join(os.path.dirname(self.single_draw_dir), pdf_file_name))
 
     @staticmethod
     def _fetch_format(value: list[float]) -> str:
@@ -110,17 +110,14 @@ class MergerFolderData:
     def _create_single_detail_pdf_paths(self) -> list[FilePath]:
         single_draw_file_template = self.single_draw_dir + r"\\{0} {1}.pdf"
         file_paths = [
-            FilePath(
-                single_draw_file_template.format(number + 1, os.path.basename(file))
-            )
+            FilePath(single_draw_file_template.format(number + 1, os.path.basename(file)))
             for number, file in enumerate(self._draw_file_paths)
         ]
         return file_paths
 
     def _fetch_main_draw_name(self) -> FileName:
         return FileName(
-            self.merger_data.specification_path
-            or os.path.basename(self._path_to_search)
+            self.merger_data.specification_path or os.path.basename(self._path_to_search)
         )
 
     def _get_current_file_prefix_number(self) -> str:
@@ -149,7 +146,9 @@ class MergerFolderData:
 
     def _fetch_single_draw_dir(self) -> FilePath:
         prefix_number = self._get_current_file_prefix_number()
-        _single_draw_dir = rf"{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}"
+        _single_draw_dir = (
+            rf"{self._core_dir}\{self._main_draw_name} - {prefix_number} {self._today_date}"
+        )
         if self._need_to_be_split:
             _single_draw_dir += rf"\{self._single_draw_dir_name}"
         else:
@@ -252,9 +251,7 @@ class ErrorsPrinter:
         number_of_iteration = 1
         error_message = ""
         for error_type, errors_list in self._errors_info.items():
-            title, temp_error_message = self.proceed_errors_list(
-                error_type, errors_list
-            )
+            title, temp_error_message = self.proceed_errors_list(error_type, errors_list)
             error_message += temp_error_message
             number_of_iteration += 1
 
@@ -303,9 +300,7 @@ class ErrorsPrinter:
         return one_line_messages, grouped_messages
 
     @staticmethod
-    def _group_missing_files_info(
-        grouped_messages: list[tuple[FileName, DrawObozn]]
-    ) -> str:
+    def _group_missing_files_info(grouped_messages: list[tuple[FileName, DrawObozn]]) -> str:
         grouped_data = itertools.groupby(grouped_messages, itemgetter(0))
         grouped_list_message = [
             header + ":\n" + "\n".join(["----" + message for _, message in value])
@@ -316,17 +311,14 @@ class ErrorsPrinter:
     @staticmethod
     def _create_missing_files_message(string_of_errors: str) -> tuple[str, str]:
         window_title = "Отсутствующие чертежи"
-        error_message = (
-            f"\nНЕ БЫЛИ НАЙДЕНЫ СЛЕДУЮЩИ ЧЕРТЕЖИ:\n" f"\n{string_of_errors}\n"
-        )
+        error_message = f"\nНЕ БЫЛИ НАЙДЕНЫ СЛЕДУЮЩИ ЧЕРТЕЖИ:\n" f"\n{string_of_errors}\n"
         return window_title, error_message
 
     @staticmethod
     def _create_file_errors_message(string_of_errors: str) -> tuple[str, str]:
         window_title = "Ошибки при обработке файлов"
         error_message = (
-            f"\nБЫЛИ ПОЛУЧЕНЫ СЛЕДУЮЩИЕ ОШИБКИ ПРИ ОБРАБОТКЕ ФАЙЛОВ:\n"
-            f"\n{string_of_errors}\n"
+            f"\nБЫЛИ ПОЛУЧЕНЫ СЛЕДУЮЩИЕ ОШИБКИ ПРИ ОБРАБОТКЕ ФАЙЛОВ:\n" f"\n{string_of_errors}\n"
         )
         return window_title, error_message
 
@@ -344,8 +336,6 @@ class ErrorsPrinter:
 
 def check_specification(spec_path: FilePath):
     if not spec_path.endswith(".spw") or not os.path.isfile(spec_path):
-        raise FileNotSpecError(
-            "Указанный файл не является спецификацией или не существует"
-        )
+        raise FileNotSpecError("Указанный файл не является спецификацией или не существует")
     if not os.path.isfile(spec_path):
         raise FileExistsError("Указанный файл не существует")

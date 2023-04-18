@@ -64,9 +64,13 @@ class UserSettings:
     remove_duplicates: bool = False
 
     @classmethod
-    def from_dict(cls, env):
+    def from_dict(cls, dict_):
         return cls(
-            **{k: v for k, v in env.items() if k in inspect.signature(cls).parameters}
+            **{
+                key: value
+                for key, value in dict_.items()
+                if key in inspect.signature(cls).parameters
+            }
         )
 
 
@@ -119,3 +123,5 @@ class MergerData:
 
 
 DrawErrorsType: TypeAlias = list[str | tuple[FileName, DrawObozn]]
+FILE_NOT_CHOSEN_MESSAGE = "Not_chosen"
+EXECUTION_NOT_CHOSEN = "Исполнение не выбрано поиск завершен"
