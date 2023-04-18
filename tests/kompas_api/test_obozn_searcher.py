@@ -246,7 +246,7 @@ class TestOboznSearcher:
                 assert mock_cell_data.call_count == 9
                 mocked_parser.assert_has_calls(
                     [
-                        call("abc-00.00.00xx", "specadraw", "a2", 15),
+                        call("abc-00.00.00xx", "speca draw", "a2", 15),
                         call("abc-10.00.01", "detail", "a4", 20),
                     ]
                 )
@@ -275,7 +275,7 @@ class TestOboznSearcher:
 
                 # then: shold correctly proceed than line and go to next line
                 assert mock_cell_data.call_count == 9
-                mocked_parser.assert_has_calls([call("abc-00.00.00xx", "specadraw", "a2", 15)])
+                mocked_parser.assert_has_calls([call("abc-00.00.00xx", "speca draw", "a2", 15)])
 
     def test_not_add_details_without_draws_to_list(self, obozn_searcher_regular, kompas_api):
         kompas_api.get_line_section.side_effect = [5, 20, 20]
@@ -330,8 +330,8 @@ class TestOboznSearcher:
             ],
             [
                 (
-                    f"\nВозможно указана деталь в качестве "
-                    f"спецификации -> {self.SPEC_PATH} ||| ABC-10.00.01 \n"
+                    f"Возможно указана деталь в качестве сборки"
+                    f" -> {self.SPEC_PATH} ||| Обозначение -> ABC-10.00.01"
                 )
             ],
         )
