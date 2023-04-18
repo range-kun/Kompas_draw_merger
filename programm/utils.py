@@ -84,7 +84,6 @@ class MergerFolderData:
 
     @staticmethod
     def _fetch_format(value: list[float]) -> str:
-
         format_sizes = {
             (595, 842): "A4",
             (842, 1190): "A3",

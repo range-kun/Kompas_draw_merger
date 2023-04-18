@@ -158,7 +158,6 @@ class UiMerger(WidgetBuilder):
         self.grid_layout.addWidget(self.path_to_spec_field, 2, 0, 1, 2)
 
     def setup_look_up_parameters_section(self):
-
         self.search_in_folder_radio_button = self.make_radio_button(
             text="Поиск по папке",
             font=self.arial_12_font,
@@ -284,7 +283,6 @@ class UiMerger(WidgetBuilder):
         self.grid_layout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
 
     def setup_bottom_section(self):
-
         self.additional_settings_button = self.make_button(
             text="Дополнительные настройки",
             font=self.arial_12_font,

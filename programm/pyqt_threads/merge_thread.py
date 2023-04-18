@@ -149,7 +149,6 @@ class MergeThread(QThread):
     def _create_merger_data(
         self, pdf_file_paths: list[FilePath]
     ) -> dict[FilePath, PdfWriter | PdfFileMerger]:
-
         if self._need_to_split_file:
             merger_instance = self._create_split_merger_data(pdf_file_paths)
         else:

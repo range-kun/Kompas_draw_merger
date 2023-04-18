@@ -115,9 +115,7 @@ class CoreKompass:
     @classmethod
     def convert_stream_to_com(cls, stream_obj):
         return Dispatch(
-            pythoncom.CoGetInterfaceAndReleaseStream(
-                stream_obj, pythoncom.IID_IDispatch
-            )
+            pythoncom.CoGetInterfaceAndReleaseStream(stream_obj, pythoncom.IID_IDispatch)
         )
 
     def __getattribute__(self, attr):
@@ -132,9 +130,7 @@ class CoreKompass:
 class KompasAPI:
     def __init__(self, kompas_api_data: ThreadKompasAPI):
         self.kompas_api7_module = kompas_api_data.kompas_api7_module
-        application = CoreKompass.convert_stream_to_com(
-            kompas_api_data.application_stream
-        )
+        application = CoreKompass.convert_stream_to_com(kompas_api_data.application_stream)
         self.app = application.Application
         self.docs = self.app.Documents
         self.const = kompas_api_data.const
@@ -205,9 +201,7 @@ class KompasAPI:
 
 class Converter:
     def __init__(self, kompas_api_data: ThreadKompasAPI):
-        kompas_api_data = CoreKompass.convert_stream_to_com(
-            kompas_api_data.application_stream
-        )
+        kompas_api_data = CoreKompass.convert_stream_to_com(kompas_api_data.application_stream)
         self.application = kompas_api_data.Application
         self.kompas_api5_module = Dispatch("Kompas.Application.5")
         self.converter = self.set_converter()
@@ -230,9 +224,7 @@ class Converter:
         converter_parameters.GrayScale = True  # оттенки серого
         converter_parameters.MultiPageOutput = True  # сохранять все страницы
         converter_parameters.MultipleFormat = 1
-        converter_parameters.Resolution = (
-            300  # разрешение (на векторные pdf не влияет никак)
-        )
+        converter_parameters.Resolution = 300  # разрешение (на векторные pdf не влияет никак)
         converter_parameters.Scale = 1.0  # масштаб
         return converter
 
@@ -288,15 +280,11 @@ class OboznSearcher:
 
     def get_all_spec_executions(self) -> dict[DrawExecution | str, int]:
         executions = {}
-        correct_spc_lines = self._get_all_lines_with_correct_type(
-            [ObjectType.OBOZN_ISP]
-        )
+        correct_spc_lines = self._get_all_lines_with_correct_type([ObjectType.OBOZN_ISP])
         for spc_line in correct_spc_lines:
             try:
                 for column_number in range(1, self.MAXIMUM_COLUMN_NUMBER):
-                    execution_in_draw = self._get_cell_data(
-                        spc_line, (6, column_number, 0)
-                    )
+                    execution_in_draw = self._get_cell_data(spc_line, (6, column_number, 0))
                     if execution_in_draw == "-":
                         execution_in_draw = "Базовое исполнение"
 
@@ -313,11 +301,7 @@ class OboznSearcher:
         return executions
 
     def _get_all_lines_with_correct_type(self, correct_line_type: list[int]) -> list:
-        return [
-            line
-            for line in self.spc_description
-            if line.ObjectType in correct_line_type
-        ]
+        return [line for line in self.spc_description if line.ObjectType in correct_line_type]
 
     @staticmethod
     def _get_cell_data(line, cell_coordinates: tuple[int, int, int]) -> str:
@@ -355,22 +339,17 @@ class OboznSearcher:
 
             line_section = self.kompas_api.get_line_section(line)
             if line_section == DrawType.ASSEMBLY_DRAW:
-                self.assembly_draws.append(
-                    DrawData(draw_obozn=draw_obozn, draw_name=draw_name)
-                )
+                self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
                 if self.without_sub_assembles:
                     break
             else:
-                self._parse_lines_for_detail_and_spec(
-                    draw_obozn, draw_name, size, line_section
-                )
+                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
 
         return self._create_spec_output(), self.errors
 
     def _parse_lines_for_detail_and_spec(
         self, draw_obozn: DrawObozn, draw_name: DrawName, size, line_section
     ):
-
         if line_section == DrawType.SPEC_DRAW:
             if self.is_detail(draw_obozn) is True:
                 message = (
@@ -388,9 +367,7 @@ class OboznSearcher:
                 or "гост" in draw_obozn
             ):
                 return
-            self.detail_draws.append(
-                DrawData(draw_obozn=draw_obozn, draw_name=draw_name)
-            )
+            self.detail_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
 
     @staticmethod
     def is_detail(obozn: str) -> bool:
@@ -421,21 +398,16 @@ class OboznSearcher:
             return _execution
 
         execution = rid_of_extra_chars(execution)
-        correct_spc_lines = self._get_all_lines_with_correct_type(
-            [ObjectType.OBOZN_ISP]
-        )
+        correct_spc_lines = self._get_all_lines_with_correct_type([ObjectType.OBOZN_ISP])
 
         for spc_line in correct_spc_lines:
             try:
                 for column_number in range(1, self.MAXIMUM_COLUMN_NUMBER):
                     execution_in_draw = rid_of_extra_chars(
-                        DrawExecution(
-                            self._get_cell_data(spc_line, (6, column_number, 0))
-                        )
+                        DrawExecution(self._get_cell_data(spc_line, (6, column_number, 0)))
                     )
-                    if (
-                        execution_in_draw == execution
-                        and self._verify_column_not_empty(column_number)
+                    if execution_in_draw == execution and self._verify_column_not_empty(
+                        column_number
                     ):
                         return column_number
             except AttributeError:
@@ -448,9 +420,7 @@ class OboznSearcher:
         column_numbers: list[int],
     ) -> tuple[list[SpecSectionData], list[str]]:
         registered_obozn: list[DrawObozn] = []
-        correct_lines = self._get_all_lines_with_correct_type(
-            [ObjectType.REGULAR_LINE, 2]
-        )
+        correct_lines = self._get_all_lines_with_correct_type([ObjectType.REGULAR_LINE, 2])
 
         for line in correct_lines:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
@@ -459,9 +429,7 @@ class OboznSearcher:
 
             line_section = self.kompas_api.get_line_section(line)
             if line_section == DrawType.ASSEMBLY_DRAW:
-                self.assembly_draws.append(
-                    DrawData(draw_obozn=draw_obozn, draw_name=draw_name)
-                )
+                self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
                 if self.without_sub_assembles:
                     break
                 registered_obozn.append(draw_obozn)
@@ -470,9 +438,7 @@ class OboznSearcher:
                 if not self._get_cell_data(line, (6, column_number, 0)):
                     continue
                 registered_obozn.append(draw_obozn)
-                self._parse_lines_for_detail_and_spec(
-                    draw_obozn, draw_name, size, line_section
-                )
+                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
 
         return self._create_spec_output(), self.errors
 
@@ -485,9 +451,7 @@ class OboznSearcher:
         ]:
             if not draw_names:
                 continue
-            spec_data.append(
-                SpecSectionData(draw_type=draw_type, draw_names=draw_names)
-            )
+            spec_data.append(SpecSectionData(draw_type=draw_type, draw_names=draw_names))
 
         return spec_data
 
@@ -498,9 +462,7 @@ class OboznSearcher:
             draw_obozn = DrawObozn(
                 self._get_cell_data(line, self.OBOZN_COLUMN).lower().replace(" ", "")
             )
-            draw_name = DrawName(
-                self._get_cell_data(line, self.NAME_COLUMN).lower().strip()
-            )
+            draw_name = DrawName(self._get_cell_data(line, self.NAME_COLUMN).lower().strip())
             size = self._get_cell_data(line, self.SIZE_COLUMN).lower().replace(" ", "")
         except AttributeError:
             return None, None, None
@@ -508,18 +470,14 @@ class OboznSearcher:
 
 
 class SpecPathChecker(OboznSearcher):
-    def __init__(
-        self, spec_path: FilePath, kompas_api: KompasAPI, execution: DrawExecution
-    ):
+    def __init__(self, spec_path: FilePath, kompas_api: KompasAPI, execution: DrawExecution):
         super(SpecPathChecker, self).__init__(spec_path, kompas_api)
         self.execution = execution
 
     def verify_its_correct_spec_path(self) -> bool:
         def _look_for_line_with_str() -> bool:
             for line in self.spc_description:
-                if line.ObjectType in [1, 2] and self._get_cell_data(
-                    line, self.OBOZN_COLUMN
-                ):
+                if line.ObjectType in [1, 2] and self._get_cell_data(line, self.OBOZN_COLUMN):
                     obozn = (
                         self._get_cell_data(line, self.OBOZN_COLUMN)
                         .strip()
@@ -555,7 +513,10 @@ def fetch_obozn_and_execution(
     obozn, execution = draw_info.groups()
     modification_symbol = ""
     if not execution[-1].isdigit():
-        execution, modification_symbol, = (
+        (
+            execution,
+            modification_symbol,
+        ) = (
             execution[:-1],
             execution[-1],
         )

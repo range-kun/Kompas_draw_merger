@@ -9,14 +9,10 @@ from PyQt5.QtWidgets import QSizePolicy
 class WidgetStyles:
     def __init__(self):
         # size policy section
-        self.line_edit_size_policy = QSizePolicy(
-            QSizePolicy.MinimumExpanding, QSizePolicy.Ignored
-        )
+        self.line_edit_size_policy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Ignored)
         self.size_policy_button = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Ignored)
         self.size_policy_button_2 = QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        self.date_policy = QSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.MinimumExpanding
-        )
+        self.date_policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.MinimumExpanding)
         self.filter_policy = QSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
 
         # font section
@@ -77,9 +73,7 @@ class WidgetBuilder(QtWidgets.QMainWindow):
         return line
 
     @staticmethod
-    def make_plain_text(
-        *, text=None, status=None, parent=None, size_policy=None, font=None
-    ):
+    def make_plain_text(*, text=None, status=None, parent=None, size_policy=None, font=None):
         plain_text = QtWidgets.QPlainTextEdit(parent)
         plain_text.setStatusTip(status)
         plain_text.setPlainText(text)
@@ -187,9 +181,7 @@ class WidgetBuilder(QtWidgets.QMainWindow):
         error_dialog.showMessage(message)
         error_dialog.exec_()
 
-    def make_checkbox(
-        self, *, font=None, text=None, activate=False, command=None, parent=None
-    ):
+    def make_checkbox(self, *, font=None, text=None, activate=False, command=None, parent=None):
         if parent:
             widget = QtWidgets.QCheckBox(parent)
         else:
@@ -276,18 +268,12 @@ class ListWidget(QtWidgets.QListWidget):
         return [str(item.text()) for item in items]
 
     def get_selected_items(self):
-        items = (
-            self.item(index)
-            for index in range(self.count())
-            if self.item(index).checkState()
-        )
+        items = (self.item(index) for index in range(self.count()) if self.item(index).checkState())
         return items
 
     def get_not_selected_items(self):
         items = (
-            self.item(index)
-            for index in range(self.count())
-            if not self.item(index).checkState()
+            self.item(index) for index in range(self.count()) if not self.item(index).checkState()
         )
         return items
 

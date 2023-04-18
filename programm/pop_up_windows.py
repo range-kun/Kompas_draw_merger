@@ -197,25 +197,19 @@ class SettingsWindow(QtWidgets.QDialog):
         )
         self.grid_layout.addWidget(self._add_water_mark_check_box, 9, 0, 2, 1)
 
-        self._default_watermark_path_radio_button = (
-            self.construct_class.make_radio_button(
-                text=DEFAULT_WATERMARK_LABEL,
-                font=self._arial_12_font,
-                parent=self.grid_layout_widget,
-                command=self._watermark_path_radio_option,
-            )
+        self._default_watermark_path_radio_button = self.construct_class.make_radio_button(
+            text=DEFAULT_WATERMARK_LABEL,
+            font=self._arial_12_font,
+            parent=self.grid_layout_widget,
+            command=self._watermark_path_radio_option,
         )
-        self.grid_layout.addWidget(
-            self._default_watermark_path_radio_button, 9, 1, 1, 1
-        )
+        self.grid_layout.addWidget(self._default_watermark_path_radio_button, 9, 1, 1, 1)
 
-        self._custom_watermark_path_radio_button = (
-            self.construct_class.make_radio_button(
-                text="Свое изображение",
-                font=self._arial_12_font,
-                parent=self.grid_layout_widget,
-                command=self._watermark_path_radio_option,
-            )
+        self._custom_watermark_path_radio_button = self.construct_class.make_radio_button(
+            text="Свое изображение",
+            font=self._arial_12_font,
+            parent=self.grid_layout_widget,
+            command=self._watermark_path_radio_option,
         )
         self.grid_layout.addWidget(self._custom_watermark_path_radio_button, 9, 2, 1, 1)
 
@@ -225,12 +219,8 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(self._custom_watermark_path_edit_line, 10, 1, 1, 2)
 
         self._watermark_path_btn_group = QtWidgets.QButtonGroup()
-        self._watermark_path_btn_group.addButton(
-            self._default_watermark_path_radio_button
-        )
-        self._watermark_path_btn_group.addButton(
-            self._custom_watermark_path_radio_button
-        )
+        self._watermark_path_btn_group.addButton(self._default_watermark_path_radio_button)
+        self._watermark_path_btn_group.addButton(self._custom_watermark_path_radio_button)
 
     def _setup_additional_settings(self):
         self._split_files_by_size_checkbox = self.construct_class.make_checkbox(
@@ -248,27 +238,19 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(self._remove_duplicates_checkbox, 11, 1, 1, 3)
 
     def _setup_save_file_path_section(self):
-        self._manually_choose_save_folder_radio_button = (
-            self.construct_class.make_radio_button(
-                text="Указать папку сохранения вручную",
-                font=self._arial_ms_shell_12_font,
-                parent=self.grid_layout_widget,
-            )
+        self._manually_choose_save_folder_radio_button = self.construct_class.make_radio_button(
+            text="Указать папку сохранения вручную",
+            font=self._arial_ms_shell_12_font,
+            parent=self.grid_layout_widget,
         )
-        self.grid_layout.addWidget(
-            self._manually_choose_save_folder_radio_button, 12, 0, 1, 1
-        )
+        self.grid_layout.addWidget(self._manually_choose_save_folder_radio_button, 12, 0, 1, 1)
 
-        self._auto_choose_save_folder_radio_button = (
-            self.construct_class.make_radio_button(
-                text="Выбрать папку автоматически",
-                font=self._arial_ms_shell_12_font,
-                parent=self.grid_layout_widget,
-            )
+        self._auto_choose_save_folder_radio_button = self.construct_class.make_radio_button(
+            text="Выбрать папку автоматически",
+            font=self._arial_ms_shell_12_font,
+            parent=self.grid_layout_widget,
         )
-        self.grid_layout.addWidget(
-            self._auto_choose_save_folder_radio_button, 12, 1, 1, 3
-        )
+        self.grid_layout.addWidget(self._auto_choose_save_folder_radio_button, 12, 1, 1, 3)
 
         save_folder_btn_group = QtWidgets.QButtonGroup()
         save_folder_btn_group.addButton(self._manually_choose_save_folder_radio_button)
@@ -282,9 +264,7 @@ class SettingsWindow(QtWidgets.QDialog):
         )
         self.grid_layout.addWidget(exclude_folder_label, 13, 0, 1, 3)
 
-        self._exclude_folder_list_widget = ExcludeFolderListWidget(
-            self.grid_layout_widget
-        )
+        self._exclude_folder_list_widget = ExcludeFolderListWidget(self.grid_layout_widget)
         self._exclude_folder_list_widget.setFont(self._arial_12_font)
         self.grid_layout.addWidget(self._exclude_folder_list_widget, 14, 0, 2, 2)
 
@@ -338,9 +318,7 @@ class SettingsWindow(QtWidgets.QDialog):
                 with open(settings_path, encoding="utf-8-sig") as data:
                     json_settings = json.load(data)
         except OSError:
-            self.construct_class.send_error(
-                f"Файл settings.json \n отсутствует {settings_path}"
-            )
+            self.construct_class.send_error(f"Файл settings.json \n отсутствует {settings_path}")
             return None
         except json.decoder.JSONDecodeError:
             self.construct_class.send_error(
@@ -357,9 +335,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self._switch_date_input_filter()
 
         if user_settings.except_folders_list:
-            self._exclude_folder_list_widget.fill_list(
-                draw_list=user_settings.except_folders_list
-            )
+            self._exclude_folder_list_widget.fill_list(draw_list=user_settings.except_folders_list)
 
         self.construct_class.fill_combo_box(
             user_settings.constructor_list, self._constructor_filter.data_combo_box
@@ -421,9 +397,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _set_user_watermark_path(self):
         try:
-            self._custom_watermark_path_edit_line.setText(
-                self._get_user_watermark_path()
-            )
+            self._custom_watermark_path_edit_line.setText(self._get_user_watermark_path())
         except OSError:
             self._custom_watermark_path_edit_line.setText(FILE_NOT_EXISTS_MESSAGE)
 
@@ -435,9 +409,7 @@ class SettingsWindow(QtWidgets.QDialog):
             return user_filename
 
         is_chosen_default_watermark = self.sender().text() == DEFAULT_WATERMARK_LABEL
-        self._custom_watermark_path_edit_line.setEnabled(
-            not is_chosen_default_watermark
-        )
+        self._custom_watermark_path_edit_line.setEnabled(not is_chosen_default_watermark)
         self._custom_watermark_path_edit_line.clear()
 
         if is_chosen_default_watermark:
@@ -535,9 +507,7 @@ class FilterSection(QtWidgets.QDialog):
         self.data_combo_box = self.construct_class.create_checkable_combobox(
             font=self.arial_ms_shell_12_font, parent=self.parent_widget
         )
-        self.parent.addWidget(
-            self.data_combo_box, *self.widget_positions.combobox_position
-        )
+        self.parent.addWidget(self.data_combo_box, *self.widget_positions.combobox_position)
 
         self.random_data_line_input = self.construct_class.make_line_edit(
             parent=self.parent_widget, font=self.arial_11_font
@@ -558,29 +528,19 @@ class FilterSection(QtWidgets.QDialog):
         return constructors_list
 
     def switch_filter_input(self):
-        self.data_from_combobox_radio_button.setEnabled(
-            self.select_filter_checkbox.isChecked()
-        )
-        self.data_from_line_radio_button.setEnabled(
-            self.select_filter_checkbox.isChecked()
-        )
+        self.data_from_combobox_radio_button.setEnabled(self.select_filter_checkbox.isChecked())
+        self.data_from_line_radio_button.setEnabled(self.select_filter_checkbox.isChecked())
 
         self.data_combo_box.setEnabled(self.select_filter_checkbox.isChecked())
         self.random_data_line_input.setEnabled(False)
 
         if self.select_filter_checkbox.isChecked():
             self.filter_btn_group.setExclusive(True)
-            self.data_from_combobox_radio_button.setChecked(
-                self.select_filter_checkbox.isChecked()
-            )
+            self.data_from_combobox_radio_button.setChecked(self.select_filter_checkbox.isChecked())
         else:
             self.filter_btn_group.setExclusive(False)
-            self.data_from_combobox_radio_button.setChecked(
-                self.select_filter_checkbox.isChecked()
-            )
-            self.data_from_line_radio_button.setChecked(
-                self.select_filter_checkbox.isChecked()
-            )
+            self.data_from_combobox_radio_button.setChecked(self.select_filter_checkbox.isChecked())
+            self.data_from_line_radio_button.setChecked(self.select_filter_checkbox.isChecked())
 
     def _choose_data_radio_option(self):
         chosen_combo_box = self.sender().text() == self.combobox_info
