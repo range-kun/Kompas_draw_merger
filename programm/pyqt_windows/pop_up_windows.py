@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 import json
 import os
+from pathlib import Path
 
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
@@ -27,6 +26,8 @@ DEFAULT_WATERMARK_LABEL = "Стандартный"
 
 
 class SettingsWindow(QtWidgets.QDialog):
+    PARENT_PATH = Path(__file__).parent.parent.resolve()
+
     def __init__(self):
         QtWidgets.QDialog.__init__(self)
 
@@ -312,7 +313,7 @@ class SettingsWindow(QtWidgets.QDialog):
             self._fill_widgets_with_settings(loaded_user_settings)
 
     def _get_settings_from_file(self) -> UserSettings | None:
-        settings_path = "settings.json"
+        settings_path = self.PARENT_PATH / "settings.json"
         try:
             if os.stat(settings_path).st_size > 0:
                 with open(settings_path, encoding="utf-8-sig") as data:

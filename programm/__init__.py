@@ -6,7 +6,7 @@ from PyQt5 import QtWidgets
 
 from programm.kompas_api import CoreKompass
 from programm.main import except_hook
-from programm.main import UiMerger
+from programm.main import KompasMerger
 
 
 if __name__ == "__main__":
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     app.aboutToQuit.connect(_core_kompas_api.exit_kompas)
     app.setStyle("Fusion")
 
-    merger = UiMerger(_core_kompas_api)
-    merger.show()
+    merger = KompasMerger(_core_kompas_api)
+    merger.mw.show()
     sys.excepthook = except_hook
     sys.exit(app.exec_())

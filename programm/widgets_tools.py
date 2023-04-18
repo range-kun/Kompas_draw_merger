@@ -211,6 +211,25 @@ class WidgetBuilder(QtWidgets.QMainWindow):
             if list_widget.item(i).checkState()
         ]
 
+    def create_yes_no_box(self, title, message_for_window):
+        return QtWidgets.QMessageBox.question(
+            self,
+            title,
+            message_for_window,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+
+    def create_save_file_dialog(self, caption, directory, filters):
+        return QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            caption,
+            directory,
+            filters,
+        )
+
+    def create_information_box(self, title, text):
+        return QtWidgets.QMessageBox.information(self, title, text)
+
 
 class CheckableComboBox(QtWidgets.QComboBox):
     def __init__(self, parent):
