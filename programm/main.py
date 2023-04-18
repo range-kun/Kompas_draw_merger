@@ -1696,6 +1696,14 @@ class SearchPathsThread(QThread):
             )
             if not spw_file_path or spw_file_path in registered_draws:
                 continue
+            if Path(spec_path).stem == Path(spw_file_path).stem:
+                self.errors_dict[ErrorType.FILE_ERRORS].append(
+                    (
+                        f"В спецификации {spec_path} имеется"
+                        f" рекурсивная вложенность {draw_data.draw_obozn}"
+                    )
+                )
+                continue
             registered_draws.append(spw_file_path)
 
             try:
