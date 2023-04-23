@@ -26,7 +26,7 @@ DEFAULT_WATERMARK_LABEL = "Стандартный"
 
 
 class SettingsWindow(QtWidgets.QDialog):
-    PARENT_PATH = Path(__file__).parent.parent.resolve()
+    PARENT_PATH = Path(__file__).parent.parent.parent.resolve()
 
     def __init__(self):
         QtWidgets.QDialog.__init__(self)

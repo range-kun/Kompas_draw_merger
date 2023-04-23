@@ -12,7 +12,7 @@ from programm.widgets_tools import WidgetStyles
 
 
 class MainWindow(WidgetBuilder):
-    IMAGE_PATH = Path(__file__).parent.resolve() / "img"
+    IMAGE_PATH = Path(__file__).parent.parent.parent.resolve() / "img"
 
     def __init__(self):
         WidgetBuilder.__init__(self, parent=None)

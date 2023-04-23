@@ -57,9 +57,6 @@ class NotSupportedSpecTypeError(Exception):
     pass
 
 
-KOMPAS_PROCESS_NAME = "kompas.exe"
-
-
 class CoreKompass:
     """
     Класс запуска, создания API и выхода из компаса
@@ -102,8 +99,13 @@ class CoreKompass:
                 self.app.Quit()  # закрываем компас
 
     def is_kompas_open(self):
-        application = getattr(self, "application")
-        print(application.Application)
+        try:
+            object.__getattribute__(self, "application").Application  # check if kompas open
+        except com_error:
+            return False
+        except AttributeError:
+            return False
+        return True
 
     def collect_thread_api(self, thread_api: Type[ThreadKompasAPI]) -> ThreadKompasAPI:
         dict_of_stream_objects = {}
