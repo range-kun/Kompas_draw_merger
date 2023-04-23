@@ -381,8 +381,8 @@ class KompasMerger:
             if os.path.splitext(file_path)[1] in KOMPAS_EXTENSIONS
         ]
         temp_list = sorted(split_paths, key=lambda split_path: split_path[1], reverse=True)
-        # sorting in the way so .spw specification
-        # sheet is the first if .cdw and .spw files has the same name
+        # sorting in the way so .spw specification draw
+        # is the first if .cdw and .spw files has the same name
         sorted_split_paths = sorted(temp_list, key=lambda split_path: split_path[0])
         sorted_draws = [
             FilePath(os.path.normpath(os.path.join(folder_path, root + ext)))

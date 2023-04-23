@@ -6,11 +6,11 @@ import os
 import re
 from contextlib import contextmanager
 from typing import Type
-from typing import TypeVar
 
 import pythoncom
 from win32com.client import Dispatch
 from win32com.client import gencache
+from win32com.universal import com_error
 
 from programm.schemas import DrawData
 from programm.schemas import DrawExecution
@@ -26,8 +26,6 @@ DIFFERENCE_ON_DRAW_MESSAGES = [
     "отличияисполненийпосборочномучертежу",
 ]
 WITHOUT_EXECUTION = 1000
-
-T = TypeVar("T")
 
 
 class ObjectType(enum.IntEnum):
@@ -57,6 +55,9 @@ class NoExecutionsError(Exception):
 
 class NotSupportedSpecTypeError(Exception):
     pass
+
+
+KOMPAS_PROCESS_NAME = "kompas.exe"
 
 
 class CoreKompass:
@@ -101,12 +102,10 @@ class CoreKompass:
                 self.app.Quit()  # закрываем компас
 
     def is_kompas_open(self):
-        value = object.__getattribute__(self, "application")
-        if value is None:
-            return False
-        return True
+        application = getattr(self, "application")
+        print(application.Application)
 
-    def collect_thread_api(self, thread_api: Type[T]) -> T:
+    def collect_thread_api(self, thread_api: Type[ThreadKompasAPI]) -> ThreadKompasAPI:
         dict_of_stream_objects = {}
         for field in thread_api._fields:
             dict_of_stream_objects[field] = getattr(self, field)
@@ -123,6 +122,11 @@ class CoreKompass:
             if attr in ["kompas_api7_module", "application", "const", "app"]:
                 # создание происходит не сразу, а лишь при вызове,
                 # так как открытие компаса занимает некоторое время
+                self.set_kompas_api()
+        if attr == 'application':
+            try:
+                object.__getattribute__(self, attr).Application  # check if kompas open
+            except com_error:
                 self.set_kompas_api()
         return object.__getattribute__(self, attr)
 
