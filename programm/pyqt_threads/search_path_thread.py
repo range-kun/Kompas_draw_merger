@@ -17,7 +17,6 @@ from programm.kompas_api import NoExecutionsError
 from programm.kompas_api import NotSupportedSpecTypeError
 from programm.kompas_api import OboznSearcher
 from programm.kompas_api import SpecPathChecker
-from programm.schemas import DrawErrorsType
 from programm.schemas import DrawExecution
 from programm.schemas import DrawObozn
 from programm.schemas import ErrorType
@@ -50,7 +49,7 @@ class SearchPathsThread(QThread):
         settings_window_data: schemas.SettingsData,
     ):
         self.draw_paths: list[FilePath] = []
-        self.errors_dict: dict[ErrorType:DrawErrorsType] = {
+        self.errors_dict: dict[ErrorType: schemas.DrawErrorsType] = {
             ErrorType.FILE_ERRORS: [],
             ErrorType.FILE_MISSING: [],
         }
@@ -72,7 +71,7 @@ class SearchPathsThread(QThread):
         self._kompas_api = KompasAPI(self.kompas_thread_api)
 
         try:
-            obozn_in_specification, errors = self._get_obozn_from_specification()
+            obozn_in_specification, errors = self._get_obozn_from_base_specification()
         except (
             FileExistsError,
             ExecutionNotSelectedError,
@@ -86,13 +85,13 @@ class SearchPathsThread(QThread):
                 f"не были получены исполнения"
             )
         else:
-            self.process_specification(obozn_in_specification)
+            self._process_specification(obozn_in_specification)
         if self.remove_duplicate_paths:
             self.draw_paths = list(dict.fromkeys(self.draw_paths))
         self.buttons_enable.emit(True)
         self.finished.emit(self.errors_dict, self.draw_paths, self.need_to_merge)
 
-    def _get_obozn_from_specification(self):
+    def _get_obozn_from_base_specification(self):
         def select_execution(_executions: dict[DrawExecution, int]):
             self.choose_spec_execution.emit(_executions)
             while True:
@@ -123,13 +122,35 @@ class SearchPathsThread(QThread):
 
         return obozn_in_specification, errors
 
-    def process_specification(self, draws_in_specification: list[SpecSectionData]):
+    def _get_obozn_from_inner_specification(
+        self, spw_file_path: FilePath, draw_data: schemas.DrawData
+    ) -> tuple[list[SpecSectionData], list[str]] | None:
+        try:
+            obozn_searcher = OboznSearcher(
+                spw_file_path,
+                self._kompas_api,
+                without_sub_assembles=self.without_sub_assembles,
+                spec_obozn=draw_data.draw_obozn,
+            )
+            response = obozn_searcher.get_obozn_from_specification()
+        except (FileExistsError, NotSupportedSpecTypeError) as e:
+            self.errors_dict[ErrorType.FILE_ERRORS].append(getattr(e, "message", str(e)))
+            return
+        except NoExecutionsError:
+            self.errors_dict[ErrorType.FILE_ERRORS].append(
+                f"{os.path.basename(self.specification_path)} - Для групповой спецификации"
+                f"не были получены исполнения, обновите базу чертежей"
+            )
+            return
+        return response
+
+    def _process_specification(self, draws_in_specification: list[SpecSectionData]):
         self.draw_paths.append(self.specification_path)
-        self.recursive_path_searcher(self.specification_path, draws_in_specification)
+        self._search_path_recursively(self.specification_path, draws_in_specification)
 
     # have to put self.obozn_in_specification in because
     # function calls herself with different input data
-    def recursive_path_searcher(
+    def _search_path_recursively(
         self, spec_path: FilePath, obozn_in_specification: list[SpecSectionData]
     ):
         # spec_path берется не None если идет рекурсия
@@ -140,41 +161,40 @@ class SearchPathsThread(QThread):
                 schemas.DrawType.DETAIL,
             ]:
                 self.draw_paths.extend(
-                    self.get_cdw_paths_from_specification(section_data, spec_path=spec_path)
+                    self._get_cdw_paths_from_specification(section_data, spec_path=spec_path)
                 )
             else:  # Specification paths
-                self.fill_draw_list_from_specification(section_data, spec_path=spec_path)
+                self._fill_draw_list_from_specification(section_data, spec_path=spec_path)
 
-    def get_cdw_paths_from_specification(
+    def _get_cdw_paths_from_specification(
         self,
         section_data: SpecSectionData,
         spec_path: FilePath,
     ) -> list[FilePath]:
         draw_paths = []
-        for draw_data in section_data.draw_names:
-            draw_file_path = FilePath(
-                self.fetch_draw_path_from_data_base(
-                    draw_data, file_extension=".cdw", file_path=spec_path
-                )
-                or ""
+        for draw_data in section_data.list_draw_data:
+            cdw_file_path = self._fetch_draw_path_from_data_base(
+                draw_data, file_extension=".cdw", file_path=spec_path
             )
+            if not cdw_file_path:
+                continue
 
-            if draw_file_path and draw_file_path not in draw_paths:
+            if cdw_file_path and cdw_file_path not in draw_paths:
                 # одинаковые пути для одной спеки не добавляем
-                draw_paths.append(draw_file_path)
+                draw_paths.append(cdw_file_path)
         return draw_paths
 
-    def fill_draw_list_from_specification(self, section_data: SpecSectionData, spec_path: FilePath):
-        registered_draws: list[FilePath] = []
-        for draw_data in section_data.draw_names:
-            spw_file_path = FilePath(
-                self.fetch_draw_path_from_data_base(
-                    draw_data, file_extension=".spw", file_path=spec_path
-                )
-                or ""
+    def _fill_draw_list_from_specification(
+        self, section_data: SpecSectionData, spec_path: FilePath
+    ):
+        registered_draws: set[FilePath] = set()
+        for draw_data in section_data.list_draw_data:
+            spw_file_path = self._fetch_draw_path_from_data_base(
+                draw_data, file_extension=".spw", file_path=spec_path
             )
-            if not spw_file_path or spw_file_path in registered_draws:
+            if not spw_file_path:
                 continue
+
             if Path(spec_path).stem == Path(spw_file_path).stem:
                 self.errors_dict[ErrorType.FILE_ERRORS].append(
                     (
@@ -183,30 +203,21 @@ class SearchPathsThread(QThread):
                     )
                 )
                 continue
-            registered_draws.append(spw_file_path)
+            response = self._get_obozn_from_inner_specification(spw_file_path, draw_data)
+            if not response:
+                continue
+            section_spec_data_list, errors = response
 
-            try:
-                obozn_searcher = OboznSearcher(
-                    spw_file_path,
-                    self._kompas_api,
-                    without_sub_assembles=self.without_sub_assembles,
-                    spec_obozn=draw_data.draw_obozn,
-                )
-                response = obozn_searcher.get_obozn_from_specification()
-            except (FileExistsError, NotSupportedSpecTypeError) as e:
-                self.errors_dict[ErrorType.FILE_ERRORS].append(getattr(e, "message", str(e)))
+            if spw_file_path in registered_draws:
+                self._proceed_mirror_spw_file(section_spec_data_list, spw_file_path)
                 continue
-            except NoExecutionsError:
-                self.errors_dict[ErrorType.FILE_ERRORS].append(
-                    f"{os.path.basename(self.specification_path)} - Для групповой спецификации"
-                    f"не были получены исполнения, обновите базу чертежей"
-                )
-                continue
-            draws_in_specification, errors = response
+            else:
+                registered_draws.add(spw_file_path)
+
             if errors:
                 self.errors_dict[ErrorType.FILE_ERRORS].extend(errors)
             self.draw_paths.append(spw_file_path)
-            self.recursive_path_searcher(spw_file_path, draws_in_specification)
+            self._search_path_recursively(spw_file_path, section_spec_data_list)
 
     @staticmethod
     def get_correct_draw_path(draw_path: list[FilePath], file_extension: str) -> FilePath:
@@ -220,8 +231,11 @@ class SearchPathsThread(QThread):
             return [file_path for file_path in draw_path if file_path.endswith(file_extension)][0]
         return draw_path[0]
 
-    def fetch_draw_path_from_data_base(
-        self, draw_data: schemas.DrawData, file_extension: str, file_path: FilePath
+    def _fetch_draw_path_from_data_base(
+        self,
+        draw_data: schemas.DrawData,
+        file_extension: str,
+        file_path: FilePath,
     ) -> FilePath | None:
         draw_obozn, draw_name = draw_data.draw_obozn, draw_data.draw_name
         if not draw_name:
@@ -290,3 +304,48 @@ class SearchPathsThread(QThread):
         ):
             return None
         return spec_path
+
+    def _proceed_mirror_spw_file(
+        self, section_spec_data_list: list[SpecSectionData], spec_path: FilePath
+    ):
+        unique_paths = self._get_unique_draw_paths(section_spec_data_list, spec_path)
+        if not unique_paths:
+            return
+        cdw_paths, spw_data_list = unique_paths
+        self.draw_paths.extend(cdw_paths)
+        for file_path, spw_spec_data_list in spw_data_list:
+            self.draw_paths.append(file_path)
+            self._search_path_recursively(file_path, spw_spec_data_list)
+
+    def _get_unique_draw_paths(
+        self,
+        section_spec_data_list: list[SpecSectionData],
+        spec_path: FilePath,
+    ) -> tuple[set, list] | None:
+        def set_file_extension():
+            if section_spec_data.draw_type == schemas.DrawType.SPEC_DRAW:
+                return '.spw'
+            return '.cdw'
+
+        unique_cdw_paths = set()
+        spw_data_list = []
+        for section_spec_data in section_spec_data_list:
+            for draw_data in section_spec_data.list_draw_data:
+                file_path = self._fetch_draw_path_from_data_base(
+                    draw_data, set_file_extension(), spec_path
+                )
+                if not file_path or file_path in self.draw_paths:
+                    continue
+                if section_spec_data.draw_type == schemas.DrawType.SPEC_DRAW:
+                    response = self._get_obozn_from_inner_specification(
+                        file_path,
+                        draw_data,
+                    )
+                    if not response:
+                        continue
+                    inner_section_spec_data, _ = response
+                    spw_data_list.append([file_path, inner_section_spec_data])
+                else:
+                    unique_cdw_paths.add(file_path)
+        if unique_cdw_paths or spw_data_list:
+            return unique_cdw_paths, spw_data_list

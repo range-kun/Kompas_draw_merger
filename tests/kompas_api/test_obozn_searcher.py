@@ -183,7 +183,9 @@ class TestOboznSearcher:
             [
                 SpecSectionData(
                     draw_type=DT.ASSEMBLY_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")],
+                    list_draw_data=[
+                        DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
+                    ],
                 )
             ],
             [],
@@ -198,15 +200,17 @@ class TestOboznSearcher:
             [
                 SpecSectionData(
                     draw_type=DT.ASSEMBLY_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")],
+                    list_draw_data=[
+                        DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
+                    ],
                 ),
                 SpecSectionData(
                     draw_type=DT.DETAIL,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.01", draw_name="Detail")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.01", draw_name="Detail")],
                 ),
                 SpecSectionData(
                     draw_type=DT.SPEC_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.00", draw_name="Speca")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.00", draw_name="Speca")],
                 ),
             ],
             [],
@@ -295,7 +299,7 @@ class TestOboznSearcher:
                 [
                     SpecSectionData(
                         draw_type=DT.ASSEMBLY_DRAW,
-                        draw_names=[
+                        list_draw_data=[
                             DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
                         ],
                     ),
@@ -321,11 +325,13 @@ class TestOboznSearcher:
             [
                 SpecSectionData(
                     draw_type=DT.ASSEMBLY_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")],
+                    list_draw_data=[
+                        DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
+                    ],
                 ),
                 SpecSectionData(
                     draw_type=DT.DETAIL,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.02", draw_name="Detail")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.02", draw_name="Detail")],
                 ),
             ],
             [
@@ -440,7 +446,9 @@ class TestOboznSearcher:
             [
                 SpecSectionData(
                     draw_type=DT.ASSEMBLY_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")],
+                    list_draw_data=[
+                        DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
+                    ],
                 )
             ],
             [],
@@ -463,15 +471,17 @@ class TestOboznSearcher:
             [
                 SpecSectionData(
                     draw_type=DT.ASSEMBLY_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")],
+                    list_draw_data=[
+                        DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
+                    ],
                 ),
                 SpecSectionData(
                     draw_type=DT.DETAIL,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.01", draw_name="Detail")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.01", draw_name="Detail")],
                 ),
                 SpecSectionData(
                     draw_type=DT.SPEC_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.00", draw_name="Speca")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.00", draw_name="Speca")],
                 ),
             ],
             [],
@@ -508,15 +518,17 @@ class TestOboznSearcher:
             [
                 SpecSectionData(
                     draw_type=DT.ASSEMBLY_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")],
+                    list_draw_data=[
+                        DrawData(draw_obozn="ABC-00.00.00 SB", draw_name="Assembly Draw")
+                    ],
                 ),
                 SpecSectionData(
                     draw_type=DT.DETAIL,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.01", draw_name="Detail")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.01", draw_name="Detail")],
                 ),
                 SpecSectionData(
                     draw_type=DT.SPEC_DRAW,
-                    draw_names=[DrawData(draw_obozn="ABC-10.00.00", draw_name="Speca")],
+                    list_draw_data=[DrawData(draw_obozn="ABC-10.00.00", draw_name="Speca")],
                 ),
             ],
             [],

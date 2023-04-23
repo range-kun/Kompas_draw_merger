@@ -451,7 +451,7 @@ class OboznSearcher:
         ]:
             if not draw_names:
                 continue
-            spec_data.append(SpecSectionData(draw_type=draw_type, draw_names=draw_names))
+            spec_data.append(SpecSectionData(draw_type=draw_type, list_draw_data=draw_names))
 
         return spec_data
 

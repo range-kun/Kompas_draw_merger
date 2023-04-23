@@ -218,8 +218,7 @@ class KompasMerger:
         self.mw.status_bar.showMessage("Завершено получение файлов из спецификации")
         self.draw_list = draw_list
 
-        if errors_info:
-            self.print_out_errors(errors_info)
+        self.print_out_errors(errors_info)
         if not self.draw_list:
             return
 
@@ -245,6 +244,9 @@ class KompasMerger:
                     file.write(errors_printer.message_for_file)
             except Exception:
                 self.mw.send_error("Ошибка записи")
+
+        if not any(errors_info.get(key) for key in errors_info):
+            return
 
         errors_printer = utils.ErrorsPrinter(errors_info)
         title, message_for_window = errors_printer.create_error_message()
@@ -334,8 +336,7 @@ class KompasMerger:
 
         self.mw.change_list_widget_state(self.mw.list_widget.clear)
         self.mw.change_list_widget_state(self.mw.list_widget.fill_list, draw_list=draw_list)
-        if errors_list:
-            self.print_out_errors({ErrorType.FILE_ERRORS: errors_list})
+        self.print_out_errors({ErrorType.FILE_ERRORS: errors_list})
         if filter_only:
             self.current_progress = 0
             self.mw.progress_bar.setValue(int(self.current_progress))

@@ -47,7 +47,7 @@ class DrawData:
 @dataclass
 class SpecSectionData:
     draw_type: DrawType
-    draw_names: list[DrawData]
+    list_draw_data: list[DrawData]
 
 
 @dataclass

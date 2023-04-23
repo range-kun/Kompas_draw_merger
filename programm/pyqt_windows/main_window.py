@@ -211,6 +211,7 @@ class MainWindow(WidgetBuilder):
             font=self.style_class.arial_12_font,
         )
         self.grid_layout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
+        self.switch_select_unselect_buttons(False)
 
     def setup_bottom_section(self):
         self.additional_settings_button = self.make_button(
