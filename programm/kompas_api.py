@@ -100,10 +100,8 @@ class CoreKompass:
 
     def is_kompas_open(self):
         try:
-            object.__getattribute__(self, "application").Application  # check if kompas open
-        except com_error:
-            return False
-        except AttributeError:
+            object.__getattribute__(self, "application").Application
+        except (com_error, AttributeError):
             return False
         return True
 
