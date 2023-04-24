@@ -259,7 +259,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_exclude_folders_section(self):
         exclude_folder_label = self.construct_class.make_label(
-            text="Исключить следующие папки:",
+            text="Исключить следующие папки при поиске чертежей:",
             font=self._arial_12_font,
             parent=self.grid_layout_widget,
         )

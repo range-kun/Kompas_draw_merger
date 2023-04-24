@@ -4,6 +4,7 @@ from __future__ import annotations
 import enum
 import os
 import re
+import time
 from contextlib import contextmanager
 from typing import Type
 
@@ -124,9 +125,7 @@ class CoreKompass:
                 # так как открытие компаса занимает некоторое время
                 self.set_kompas_api()
         if attr == 'application':
-            try:
-                object.__getattribute__(self, attr).Application  # check if kompas open
-            except com_error:
+            if not self.is_kompas_open():
                 self.set_kompas_api()
         return object.__getattribute__(self, attr)
 
