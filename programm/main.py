@@ -17,6 +17,7 @@ from programm import schemas
 from programm import utils
 from programm.errors import FolderNotSelectedError
 from programm.kompas_api import CoreKompass
+from programm.kompas_api import KompasNotInstallerError
 from programm.pyqt_threads import DataBaseThread
 from programm.pyqt_threads import FilterThread
 from programm.pyqt_threads import MergeThread
@@ -191,7 +192,9 @@ class KompasMerger:
         self.bypassing_sub_assemblies_previous_status = (
             self.mw.bypassing_sub_assemblies_chekcbox.isChecked()
         )
-        kompas_thread_api = self.collect_kompas_api()
+        if not (kompas_thread_api := self.collect_kompas_api()):
+            return
+
         only_one_specification = not self.mw.bypassing_sub_assemblies_chekcbox.isChecked()
         self.search_path_thread = SearchPathsThread(
             specification_path=self.specification_path,
@@ -310,10 +313,11 @@ class KompasMerger:
     ):
         draw_paths = draw_paths or self.mw.list_widget.get_items_text_data()
         self.previous_filters = self.mw.settings_window_data.filters
-        thread_api = self.collect_kompas_api()
+        if not (kompas_thread_api := self.collect_kompas_api()):
+            return
 
         self.filter_thread = FilterThread(
-            draw_paths, self.mw.settings_window_data.filters, thread_api, filter_only
+            draw_paths, self.mw.settings_window_data.filters, kompas_thread_api, filter_only
         )
         self.filter_thread.status.connect(self.mw.status_bar.showMessage)
         self.filter_thread.increase_step.connect(self.increase_step)
@@ -465,12 +469,13 @@ class KompasMerger:
             if self.mw.search_in_folder_radio_button.isChecked()
             else os.path.dirname(self.specification_path)
         )
-        thread_api = self.collect_kompas_api()
+        if not (kompas_thread_api := self.collect_kompas_api()):
+            return
         self.merge_thread = MergeThread(
             files=draws_list,
             directory=search_path,
             data_queue=self.data_queue,
-            kompas_thread_api=thread_api,
+            kompas_thread_api=kompas_thread_api,
             settings_window_data=self.mw.settings_window_data,
             merger_data=collect_merge_data(),
         )
@@ -590,7 +595,8 @@ class KompasMerger:
 
     def get_data_base_from_folder(self, draw_paths: list[FilePath], need_to_merge=False):
         self.calculate_progress_step(len(draw_paths), get_data_base=True)
-        kompas_thread_api = self.collect_kompas_api()
+        if not (kompas_thread_api := self.collect_kompas_api()):
+            return
 
         self.data_base_thread = DataBaseThread(draw_paths, need_to_merge, kompas_thread_api)
         self.data_base_thread.buttons_enable.connect(self.mw.switch_button_group)
@@ -699,9 +705,14 @@ class KompasMerger:
             else:
                 return 1
 
-    def collect_kompas_api(self) -> ThreadKompasAPI:
+    def collect_kompas_api(self) -> ThreadKompasAPI | None:
         self.mw.status_bar.showMessage("Открытие Kompas")
-        return self.kompas_api.collect_thread_api(ThreadKompasAPI)
+        try:
+            thread_kompas_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
+        except KompasNotInstallerError:
+            self.mw.send_error("На компьютере не обнаружена установленная версия Kompas")
+            return
+        return thread_kompas_api
 
 
 def except_hook(cls, exception, traceback):

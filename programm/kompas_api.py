@@ -4,7 +4,6 @@ from __future__ import annotations
 import enum
 import os
 import re
-import time
 from contextlib import contextmanager
 from typing import Type
 
@@ -58,6 +57,10 @@ class NotSupportedSpecTypeError(Exception):
     pass
 
 
+class KompasNotInstallerError(Exception):
+    pass
+
+
 class CoreKompass:
     """
     Класс запуска, создания API и выхода из компаса
@@ -68,17 +71,21 @@ class CoreKompass:
         self.application = None
         self.app = None
         self.const = None
+        self.error_message = None
 
     def set_kompas_api(self):
         pythoncom.CoInitialize()
         self.kompas_api7_module = gencache.EnsureModule(
             "{69AC2981-37C0-4379-84FD-5DD2F3C0A520}", 0, 1, 0
         )
-        self.application = self.kompas_api7_module.IApplication(
-            Dispatch("Kompas.Application.7")._oleobj_.QueryInterface(
-                self.kompas_api7_module.IKompasAPIObject.CLSID, pythoncom.IID_IDispatch
+        try:
+            self.application = self.kompas_api7_module.IApplication(
+                Dispatch("Kompas.Application.7")._oleobj_.QueryInterface(
+                    self.kompas_api7_module.IKompasAPIObject.CLSID, pythoncom.IID_IDispatch
+                )
             )
-        )
+        except com_error:
+            raise KompasNotInstallerError
         self.app = self.application.Application
         self.const = gencache.EnsureModule(
             "{75C9F5D0-B5B8-4526-8681-9903C567D2ED}", 0, 1, 0
