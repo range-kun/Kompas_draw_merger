@@ -163,6 +163,9 @@ class MainWindow(WidgetBuilder):
         self.grid_layout.addLayout(horizontal_layout, 8, 0, 1, 4)
 
         self.list_widget = MainListWidget(self.grid_widget)
+        self.list_widget.setToolTip(
+            "Для выбора нескольких чертежей используйте ctrl или shift, для удаления del"
+        )
         horizontal_layout.addWidget(self.list_widget)
 
         vertical_layout = QtWidgets.QVBoxLayout()
@@ -175,6 +178,7 @@ class MainWindow(WidgetBuilder):
         )
         self.move_line_up_button.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "arrow_up.png")))
         self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_up_button.setToolTip("Переместить выбранный чертеж вверх")
 
         self.move_line_down_button = self.make_button(
             text="\n\n",
@@ -183,6 +187,7 @@ class MainWindow(WidgetBuilder):
         )
         self.move_line_down_button.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "arrow_down.png")))
         self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_down_button.setToolTip("Переместить выбранный чертеж вниз")
 
         self.delete_list_widget_item = self.make_button(
             text="\n\n",
@@ -191,6 +196,7 @@ class MainWindow(WidgetBuilder):
         )
         self.delete_list_widget_item.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "red_cross.png")))
         self.delete_list_widget_item.setIconSize(QtCore.QSize(50, 50))
+        self.delete_list_widget_item.setToolTip("Удалить выбранный чертеж/чертежи из списка")
 
         vertical_layout.addWidget(self.move_line_up_button)
         vertical_layout.addWidget(self.move_line_down_button)
