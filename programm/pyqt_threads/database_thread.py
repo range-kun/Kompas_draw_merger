@@ -132,8 +132,6 @@ class DataBaseThread(QThread):
                 (path_data.draw_obozn, path) for path in path_data.cdw_paths + path_data.spw_paths
             ]
 
-        self.status.emit("Открытие Kompas")
-
         self.calculate_step.emit(len(double_paths_list), False, True)
 
         temp_path_dict: dict[DrawObozn, list[FilePath]] = {}

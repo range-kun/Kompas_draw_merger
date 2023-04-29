@@ -64,11 +64,17 @@ class MainWindow(WidgetBuilder):
             font=self.style_class.arial_12_font,
         )
         self.grid_layout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
+        self.choose_folder_button.setToolTip(
+            "Добавить все чертежи в формате .cdw и .spw указанной папке в список ниже"
+        )
 
         self.choose_data_base_button = self.make_button(
             text="Выбор файла\n с базой чертежей",
             font=self.style_class.arial_12_font,
             enabled=False,
+        )
+        self.choose_data_base_button.setToolTip(
+            "Выберите имеющейся файл в формате .json, в котором будут содержаться пути до чертежей"
         )
         self.grid_layout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
@@ -137,6 +143,10 @@ class MainWindow(WidgetBuilder):
             text="Обновить файлы для склеивания",
             font=self.style_class.arial_12_font,
         )
+        self.refresh_draw_list_button.setToolTip(
+            "Обновит список чертежей снизу, применив "
+            "фильтры поиска, обновить папку с чертежами и.т.д"
+        )
         upper_items_list_layout.addWidget(self.refresh_draw_list_button)
 
         self.save_items_list = self.make_button(
@@ -144,6 +154,9 @@ class MainWindow(WidgetBuilder):
             font=self.style_class.arial_12_font,
         )
         upper_items_list_layout.addWidget(self.save_items_list)
+        self.save_items_list.setToolTip(
+            "Скопирует все выбранные файлы из списка ниже в указанную папку."
+        )
 
     def setup_list_widget_section(self):
         horizontal_layout = QtWidgets.QHBoxLayout()
@@ -209,6 +222,10 @@ class MainWindow(WidgetBuilder):
         self.add_folder_to_list_button = self.make_button(
             text="Добавить папку в список",
             font=self.style_class.arial_12_font,
+        )
+        self.add_folder_to_list_button.setToolTip(
+            "Добавить чертежи в формате .cdw и .spw в указанной папке в "
+            "конец списка (файлы из вложенных папок не добавляются)"
         )
         self.grid_layout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
         self.switch_select_unselect_buttons(False)

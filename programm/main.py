@@ -191,7 +191,7 @@ class KompasMerger:
         self.bypassing_sub_assemblies_previous_status = (
             self.mw.bypassing_sub_assemblies_chekcbox.isChecked()
         )
-
+        kompas_thread_api = self.collect_kompas_api()
         only_one_specification = not self.mw.bypassing_sub_assemblies_chekcbox.isChecked()
         self.search_path_thread = SearchPathsThread(
             specification_path=self.specification_path,
@@ -199,7 +199,7 @@ class KompasMerger:
             only_one_specification=only_one_specification,
             need_to_merge=need_to_merge,
             data_queue=self.data_queue,
-            kompas_thread_api=self.kompas_api.collect_thread_api(ThreadKompasAPI),
+            kompas_thread_api=kompas_thread_api,
             settings_window_data=self.mw.settings_window_data,
         )
         self.search_path_thread.buttons_enable.connect(self.mw.switch_button_group)
@@ -310,7 +310,7 @@ class KompasMerger:
     ):
         draw_paths = draw_paths or self.mw.list_widget.get_items_text_data()
         self.previous_filters = self.mw.settings_window_data.filters
-        thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
+        thread_api = self.collect_kompas_api()
 
         self.filter_thread = FilterThread(
             draw_paths, self.mw.settings_window_data.filters, thread_api, filter_only
@@ -460,14 +460,12 @@ class KompasMerger:
                 specification_path=main_name,
             )
 
-        self.mw.status_bar.showMessage("Открытие Kompas")
-
         search_path = (
             self.search_path
             if self.mw.search_in_folder_radio_button.isChecked()
             else os.path.dirname(self.specification_path)
         )
-        thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
+        thread_api = self.collect_kompas_api()
         self.merge_thread = MergeThread(
             files=draws_list,
             directory=search_path,
@@ -497,7 +495,7 @@ class KompasMerger:
         self.mw.source_of_draws_field.clear()
         if self.mw.search_in_folder_radio_button.isChecked():
             self.mw.source_of_draws_field.setPlaceholderText(
-                "Выберите папку с файлами в формате .cdw или .spw"
+                "Выберите папку с файлами в формате .spw или .cdw"
             )
         else:
             self.mw.source_of_draws_field.setPlaceholderText(
@@ -507,7 +505,7 @@ class KompasMerger:
                 )
             )
         self.mw.path_to_spec_field.clear()
-        self.mw.path_to_spec_field.setPlaceholderText("Укажите путь до файла со спецификацией")
+        self.mw.path_to_spec_field.setPlaceholderText("Укажите путь до файла со спецификацией .spw")
         self.mw.change_list_widget_state(self.mw.list_widget.clear)
 
     def add_file_to_list(self):
@@ -546,13 +544,20 @@ class KompasMerger:
                 "Выберите папку с файлами в формате .cdw или .spw"
             )
             self.mw.choose_folder_button.setText("Выбор папки \n с чертежами для поиска")
-
+            self.mw.choose_folder_button.setToolTip(
+                "Добавить все чертежи в формате .cdw и .spw указанной папке в список ниже"
+            )
         else:
             self.mw.source_of_draws_field.setPlaceholderText(
                 "Выберите папку с файлами в формате "
                 ".cdw или .spw \n или файл с базой чертежей в формате .json"
             )
             self.mw.choose_folder_button.setText("Выбор папки для\n создания базы чертежей")
+            self.mw.choose_folder_button.setToolTip(
+                "Выберите папку с чертежами в формате .cdw и .spw, на "
+                "базе которой программа создаст пути для поиска чертежей. "
+                "Поиск ведется и по вложенным папкам"
+            )
 
     def calculate_progress_step(self, number_of_files, filter_only=False, get_data_base=False):
         self.current_progress = 0
@@ -585,7 +590,7 @@ class KompasMerger:
 
     def get_data_base_from_folder(self, draw_paths: list[FilePath], need_to_merge=False):
         self.calculate_progress_step(len(draw_paths), get_data_base=True)
-        kompas_thread_api = self.kompas_api.collect_thread_api(ThreadKompasAPI)
+        kompas_thread_api = self.collect_kompas_api()
 
         self.data_base_thread = DataBaseThread(draw_paths, need_to_merge, kompas_thread_api)
         self.data_base_thread.buttons_enable.connect(self.mw.switch_button_group)
@@ -680,7 +685,11 @@ class KompasMerger:
             try:
                 self.data_base_file = json.load(file)
             except json.decoder.JSONDecodeError:
-                self.mw.send_error("В Файл settings.json \n присутствуют ошибки \n синтаксиса json")
+                self.mw.send_error(
+                    "В Файл settings.json присутствуют ошибки синтаксиса json. "
+                    "Для проверки файла можете воспользоваться "
+                    "https://tools.icoder.uz/json-validator.php или пересоздайте базу чертежей"
+                )
                 return None
             except UnicodeDecodeError:
                 self.mw.send_error(
@@ -689,6 +698,10 @@ class KompasMerger:
                 return None
             else:
                 return 1
+
+    def collect_kompas_api(self) -> ThreadKompasAPI:
+        self.mw.status_bar.showMessage("Открытие Kompas")
+        return self.kompas_api.collect_thread_api(ThreadKompasAPI)
 
 
 def except_hook(cls, exception, traceback):
