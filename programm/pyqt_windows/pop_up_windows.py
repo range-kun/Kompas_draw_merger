@@ -333,9 +333,9 @@ class SettingsWindow(QtWidgets.QDialog):
             return None
         except (json.decoder.JSONDecodeError, ValueError):
             self.construct_class.send_error(
-                "В Файл settings.json присутствуют ошибки синтаксиса json."
+                "В Файл settings.json присутствуют ошибки синтаксиса json. "
                 "Для проверки файла можете воспользоваться: "
-                "https://tools.icoder.uz/json-validator.php"
+                "https://jsonbeautifier.net/json5-validator/"
             )
             return None
 
