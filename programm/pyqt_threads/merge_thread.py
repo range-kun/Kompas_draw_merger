@@ -31,6 +31,7 @@ from programm.utils import FILE_NOT_EXISTS_MESSAGE
 class MergeThread(QThread):
     buttons_enable = pyqtSignal(bool)
     send_errors = pyqtSignal(str)
+    message_after_merge = pyqtSignal(str)
     status = pyqtSignal(str)
     kill_thread = pyqtSignal()
     increase_step = pyqtSignal(bool)
@@ -85,14 +86,7 @@ class MergeThread(QThread):
         if self._merger_data.delete_single_draws_after_merge_checkbox:
             shutil.rmtree(single_draw_dir)
 
-        if not self._settings_window_data.split_file_by_size:
-            pdf_file = self._file_paths_creator.create_main_pdf_file_path()
-            os.startfile(pdf_file)
-
-        os.system(
-            f"explorer {(os.path.normpath(os.path.dirname(single_draw_dir))).replace('//', '/')}"
-        )
-
+        self._open_files_after_merge(single_draw_dir)
         self.buttons_enable.emit(True)
         self.progress_bar.emit(int(0))
         self.status.emit("Слитие успешно завершено")
@@ -102,6 +96,25 @@ class MergeThread(QThread):
         self.buttons_enable.emit(True)
         self.progress_bar.emit(0)
         self.kill_thread.emit()
+
+    def _open_files_after_merge(self, single_draw_dir):
+        pdf_file_message = " "
+        if not self._settings_window_data.split_file_by_size:
+            pdf_file = self._file_paths_creator.create_main_pdf_file_path()
+            if pdf_file:
+                pdf_file_message = f" {os.path.basename(pdf_file)} "
+            if self._merger_data.need_to_open_after_merge:
+                os.startfile(pdf_file)
+        directory_with_pdf = (
+            f"{(os.path.normpath(os.path.dirname(single_draw_dir))).replace('//', '/')}"
+        )
+
+        if self._merger_data.need_to_open_after_merge:
+            os.system(f"explorer {directory_with_pdf}")
+        else:
+            self.message_after_merge.emit(
+                f"Файл(ы){pdf_file_message}находятся в папке: \n{directory_with_pdf}"
+            )
 
     def select_save_folder(self) -> FilePath | None:
         # If request folder from this thread later when trying to retrieve kompas api

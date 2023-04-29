@@ -237,19 +237,33 @@ class MainWindow(WidgetBuilder):
         self.switch_select_unselect_buttons(False)
 
     def setup_bottom_section(self):
+        horizontal_layout = QtWidgets.QHBoxLayout()
+        self.grid_layout.addLayout(horizontal_layout, 11, 0, 1, 4)
+
         self.additional_settings_button = self.make_button(
             text="Дополнительные настройки",
             font=self.style_class.arial_12_font,
             command=self.show_settings,
         )
-        self.grid_layout.addWidget(self.additional_settings_button, 11, 0, 1, 2)
+        horizontal_layout.addWidget(self.additional_settings_button)
 
         self.delete_single_draws_after_merge_checkbox = self.make_checkbox(
             font=self.style_class.arial_12_font,
-            text="Удалить однодетальные pdf-чертежи по окончанию",
+            text="Удалить отдельные PDF-чертежи по окончанию",
             activate=True,
         )
-        self.grid_layout.addWidget(self.delete_single_draws_after_merge_checkbox, 11, 2, 1, 2)
+        self.delete_single_draws_after_merge_checkbox.setToolTip(
+            "В процессе сливания чертежей программа "
+            "конвертирует их в отдельные PDF файлы и хранит на диске"
+        )
+        horizontal_layout.addWidget(self.delete_single_draws_after_merge_checkbox)
+
+        self.open_file_after_merge_chekbox = self.make_checkbox(
+            text="Открывать папку и файл по окончанию",
+            font=self.style_class.arial_12_font,
+            activate=True,
+        )
+        horizontal_layout.addWidget(self.open_file_after_merge_chekbox)
 
         self.merge_files_button = self.make_button(
             text="Склеить файлы",

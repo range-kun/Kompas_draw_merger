@@ -119,6 +119,7 @@ class DoublePathsData:
 @dataclass
 class MergerData:
     delete_single_draws_after_merge_checkbox: bool
+    need_to_open_after_merge: bool
     specification_path: FilePath | None = None
 
 

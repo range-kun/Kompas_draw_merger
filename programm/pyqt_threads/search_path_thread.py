@@ -49,7 +49,7 @@ class SearchPathsThread(QThread):
         settings_window_data: schemas.SettingsData,
     ):
         self.draw_paths: list[FilePath] = []
-        self.errors_dict: dict[ErrorType: schemas.DrawErrorsType] = {
+        self.errors_dict: dict[ErrorType, schemas.DrawErrorsType] = {
             ErrorType.FILE_ERRORS: [],
             ErrorType.FILE_MISSING: [],
         }

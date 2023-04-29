@@ -461,6 +461,7 @@ class KompasMerger:
                 main_name = Path(self.specification_path).stem
             return schemas.MergerData(
                 self.mw.delete_single_draws_after_merge_checkbox.isChecked(),
+                self.mw.open_file_after_merge_chekbox.isChecked(),
                 specification_path=main_name,
             )
 
@@ -486,6 +487,7 @@ class KompasMerger:
         self.merge_thread.send_errors.connect(self.mw.send_error)
         self.merge_thread.status.connect(self.mw.status_bar.showMessage)
         self.merge_thread.progress_bar.connect(self.mw.progress_bar.setValue)
+        self.merge_thread.message_after_merge.connect(self.show_message_after_merge)
 
         self.merge_thread.start()
 
@@ -493,6 +495,9 @@ class KompasMerger:
         self.mw.switch_button_group(True)
         self.mw.status_bar.showMessage("Папка не выбрана, запись прервана")
         self.merge_thread.terminate()
+
+    def show_message_after_merge(self, message: str):
+        self.mw.create_information_box("Слитие файлов успешно завершено", message)
 
     def clear_data(self):
         self.search_path = None

@@ -77,9 +77,10 @@ class MergerFolderData:
                 )
             )
         else:
-            pdf_file_name = (
-                f"{os.path.basename(self.single_draw_dir[:-len(self._single_draw_dir_name)])}.pdf"
-            )
+            file_name = os.path.basename(
+                self.single_draw_dir[: -len(self._single_draw_dir_name)]
+            ).strip()
+            pdf_file_name = f"{file_name}.pdf"
             return FilePath(os.path.join(os.path.dirname(self.single_draw_dir), pdf_file_name))
 
     @staticmethod
