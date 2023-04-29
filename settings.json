@@ -1,37 +1,36 @@
 ﻿{
-  "except_folders_list":
+  "except_folders_list": // Исключить следующие папки при поиске чертежей
     [
       "Былое",
       "Проработка"
     ],
-  "constructor_list":
+  "constructor_list": // С указанной фамилией разработчика
     [
       "Иванов",
       "Петров",
       "Сидоров"
     ],
-  "checker_list":
+  "checker_list":  // С указанной фамилией проверяющего
     [
       "Иванов"
     ],
-  "sortament_list":
+  "sortament_list":  // С указанным сортаментом
   [
     "Труба",
     "Круг",
     "Профиль",
     "Лист"
   ],
-  "add_default_watermark": false,
-  "watermark_path": "watermark.png",
-  "watermark_position":
+  "add_default_watermark": false, // Добавить водяной знак, true - да, false - нет
+  "watermark_path": "watermark.png",  // Имя файла водяного знака
+  "watermark_position": // Позция на листе водяного знака: 0,0 первая кордината, 170, 170 - вторая кордината.
     [
       0,
       0,
       170,
       170
     ],
-  "sort_files": false,
-  "auto_save_folder": false,
-  "remove_duplicates": false,
-  "split_file_by_size": false
+  "auto_save_folder": false,  // Выбрать папку автоматически, true: да, false: указать папку сохранения вручную
+  "remove_duplicates": false,  // Удалять повторяющиеся чертежи
+  "split_file_by_size": false // Разбить файлы по размерам, true - да, false - нет
 }

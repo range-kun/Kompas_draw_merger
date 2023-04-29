@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+
 import pythoncom
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import QThread
@@ -38,17 +40,17 @@ class FilterThread(QThread):
         self._kompas_api = KompasAPI(self.kompas_thread_api)
         self.switch_button_group.emit(False)
         filtered_paths_draw_list = self.filter_draws()
-        self.status.emit("Закрытие Kompas")
         self.switch_button_group.emit(True)
         self.finished.emit(filtered_paths_draw_list, self.errors_list, self.filter_only)
 
     def filter_draws(self) -> list[str]:
         draw_list = []
-
-        self.status.emit("Открытие Kompas")
+        names = ["Капустин Б.М.", "Петров И.Г.", "Сидоров Н.Т."]
+        cycle_names = itertools.cycle(names)
         for file_path in self.draw_paths_list:  # структура обработки для каждого документа
             self.status.emit(f"Применение фильтров к {file_path}")
             self.increase_step.emit(True)
+            name = next(cycle_names)
             try:
                 with self._kompas_api.get_draw_stamp(file_path) as draw_stamp:
                     if self.filters.date_range and not self.filter_by_date_cell(draw_stamp):
@@ -56,15 +58,12 @@ class FilterThread(QThread):
 
                     file_is_ok = True
                     for data_list, stamp_cell in [
-                        (
-                            self.filters.constructor_list,
-                            StampCell.CONSTRUCTOR_NAME_CELL,
-                        ),
+                        (self.filters.constructor_list, StampCell.CONSTRUCTOR_NAME_CELL),
                         (self.filters.checker_list, StampCell.CHECKER_NAME_CELL),
                         (self.filters.sortament_list, StampCell.GAUGE_CELL),
                     ]:
                         if data_list and not self.filter_file_by_cell_value(
-                            data_list, stamp_cell, draw_stamp
+                            data_list, stamp_cell, draw_stamp, name
                         ):
                             file_is_ok = False
                             break
@@ -94,9 +93,13 @@ class FilterThread(QThread):
 
     @staticmethod
     def filter_file_by_cell_value(
-        filter_data_list: list[str], stamp_cell_number: StampCell, draw_stamp
+        filter_data_list: list[str], stamp_cell_number: StampCell, draw_stamp, name
     ):
         data_in_stamp = draw_stamp.Text(stamp_cell_number).Str
+        draw_stamp.Text(9).Str = 'ООО "РиК"'
+        draw_stamp.Text(stamp_cell_number.CONSTRUCTOR_NAME_CELL).Str = name
+        draw_stamp.Text(stamp_cell_number.CHECKER_NAME_CELL).Str = "Иванов А.В."
+        draw_stamp.Update()
         if any(filtered_data in data_in_stamp for filtered_data in filter_data_list):
             return True
         return False

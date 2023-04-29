@@ -64,11 +64,17 @@ class MainWindow(WidgetBuilder):
             font=self.style_class.arial_12_font,
         )
         self.grid_layout.addWidget(self.choose_folder_button, 1, 2, 1, 1)
+        self.choose_folder_button.setToolTip(
+            "Добавить все чертежи в формате .cdw и .spw указанной папке в список ниже"
+        )
 
         self.choose_data_base_button = self.make_button(
             text="Выбор файла\n с базой чертежей",
             font=self.style_class.arial_12_font,
             enabled=False,
+        )
+        self.choose_data_base_button.setToolTip(
+            "Выберите имеющейся файл в формате .json, в котором будут содержаться пути до чертежей"
         )
         self.grid_layout.addWidget(self.choose_data_base_button, 1, 3, 1, 1)
 
@@ -137,6 +143,10 @@ class MainWindow(WidgetBuilder):
             text="Обновить файлы для склеивания",
             font=self.style_class.arial_12_font,
         )
+        self.refresh_draw_list_button.setToolTip(
+            "Обновит список чертежей снизу, применив "
+            "фильтры поиска, обновить папку с чертежами и.т.д"
+        )
         upper_items_list_layout.addWidget(self.refresh_draw_list_button)
 
         self.save_items_list = self.make_button(
@@ -144,12 +154,18 @@ class MainWindow(WidgetBuilder):
             font=self.style_class.arial_12_font,
         )
         upper_items_list_layout.addWidget(self.save_items_list)
+        self.save_items_list.setToolTip(
+            "Скопирует все выбранные файлы из списка ниже в указанную папку."
+        )
 
     def setup_list_widget_section(self):
         horizontal_layout = QtWidgets.QHBoxLayout()
         self.grid_layout.addLayout(horizontal_layout, 8, 0, 1, 4)
 
         self.list_widget = MainListWidget(self.grid_widget)
+        self.list_widget.setToolTip(
+            "Для выбора нескольких чертежей используйте ctrl или shift, для удаления del"
+        )
         horizontal_layout.addWidget(self.list_widget)
 
         vertical_layout = QtWidgets.QVBoxLayout()
@@ -162,6 +178,7 @@ class MainWindow(WidgetBuilder):
         )
         self.move_line_up_button.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "arrow_up.png")))
         self.move_line_up_button.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_up_button.setToolTip("Переместить выбранный чертеж вверх")
 
         self.move_line_down_button = self.make_button(
             text="\n\n",
@@ -170,6 +187,7 @@ class MainWindow(WidgetBuilder):
         )
         self.move_line_down_button.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "arrow_down.png")))
         self.move_line_down_button.setIconSize(QtCore.QSize(50, 50))
+        self.move_line_down_button.setToolTip("Переместить выбранный чертеж вниз")
 
         self.delete_list_widget_item = self.make_button(
             text="\n\n",
@@ -178,6 +196,7 @@ class MainWindow(WidgetBuilder):
         )
         self.delete_list_widget_item.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "red_cross.png")))
         self.delete_list_widget_item.setIconSize(QtCore.QSize(50, 50))
+        self.delete_list_widget_item.setToolTip("Удалить выбранный чертеж/чертежи из списка")
 
         vertical_layout.addWidget(self.move_line_up_button)
         vertical_layout.addWidget(self.move_line_down_button)
@@ -209,6 +228,10 @@ class MainWindow(WidgetBuilder):
         self.add_folder_to_list_button = self.make_button(
             text="Добавить папку в список",
             font=self.style_class.arial_12_font,
+        )
+        self.add_folder_to_list_button.setToolTip(
+            "Добавить чертежи в формате .cdw и .spw в указанной папке в "
+            "конец списка (файлы из вложенных папок не добавляются)"
         )
         self.grid_layout.addWidget(self.add_folder_to_list_button, 10, 3, 1, 1)
         self.switch_select_unselect_buttons(False)

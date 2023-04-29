@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+import json5
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QGridLayout
@@ -118,9 +119,12 @@ class SettingsWindow(QtWidgets.QDialog):
     def _setup_filter_by_date_section(self):
         self._filter_by_date_check_box = self.construct_class.make_checkbox(
             font=self._arial_12_font,
-            text="C датой только за указанный период",
+            text="C датой в указанном диапазоне: от и до",
             command=self._switch_date_input_filter,
             parent=self.grid_layout_widget,
+        )
+        self._filter_by_date_check_box.setToolTip(
+            "В качестве даты будет использоваться ячейка напротив фамилии разработчика в чертеже."
         )
         self._filter_by_date_check_box.setSizePolicy(self._check_box_policy)
         self.grid_layout.addWidget(self._filter_by_date_check_box, 1, 0, 1, 1)
@@ -229,12 +233,18 @@ class SettingsWindow(QtWidgets.QDialog):
             font=self._arial_12_font,
             parent=self.grid_layout_widget,
         )
+        self._split_files_by_size_checkbox.setToolTip(
+            "Чертежи будут отсортированы и разбиты по размеру листа."
+        )
         self.grid_layout.addWidget(self._split_files_by_size_checkbox, 11, 0, 1, 1)
 
         self._remove_duplicates_checkbox = self.construct_class.make_checkbox(
             text="Удалить повторяющиеся чертежи",
             font=self._arial_12_font,
             parent=self.grid_layout_widget,
+        )
+        self._remove_duplicates_checkbox.setToolTip(
+            "Чертежи будут добавлены только по первому вхождению"
         )
         self.grid_layout.addWidget(self._remove_duplicates_checkbox, 11, 1, 1, 3)
 
@@ -307,6 +317,10 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _apply_user_settings(self):
         loaded_user_settings = self._get_settings_from_file()
+        self._apply_default_graphic_settings()
+        if not loaded_user_settings:
+            self._select_auto_folder(False)
+            return
         self._watermark_path = loaded_user_settings.watermark_path
         self.watermark_position = loaded_user_settings.watermark_position
         if loaded_user_settings:
@@ -317,44 +331,47 @@ class SettingsWindow(QtWidgets.QDialog):
         try:
             if os.stat(settings_path).st_size > 0:
                 with open(settings_path, encoding="utf-8-sig") as data:
-                    json_settings = json.load(data)
+                    json_settings = json5.load(data)
         except OSError:
             self.construct_class.send_error(f"Файл settings.json \n отсутствует {settings_path}")
             return None
-        except json.decoder.JSONDecodeError:
+        except (json.decoder.JSONDecodeError, ValueError):
             self.construct_class.send_error(
-                "В Файл settings.json \n присутствуют ошибки \n синтаксиса json"
+                "В Файл settings.json присутствуют ошибки синтаксиса json."
+                "Для проверки файла можете воспользоваться: "
+                "https://tools.icoder.uz/json-validator.php"
             )
             return None
 
         user_settings = UserSettings.from_dict(json_settings)
         return user_settings
 
-    def _fill_widgets_with_settings(self, user_settings: UserSettings):
+    def _apply_default_graphic_settings(self):
         self.construct_class.set_date(date_today_by_int(), self._first_date_input)
         self.construct_class.set_date(date_today_by_int(), self._last_date_input)
         self._switch_date_input_filter()
+        self._constructor_filter.switch_filter_input()
+        self._checker_filter.switch_filter_input()
+        self._gauge_filter.switch_filter_input()
+        self._switch_watermark_group()
 
+    def _fill_widgets_with_settings(self, user_settings: UserSettings):
         if user_settings.except_folders_list:
             self._exclude_folder_list_widget.fill_list(draw_list=user_settings.except_folders_list)
 
         self.construct_class.fill_combo_box(
             user_settings.constructor_list, self._constructor_filter.data_combo_box
         )
-        self._constructor_filter.switch_filter_input()
 
         self.construct_class.fill_combo_box(
             user_settings.checker_list, self._checker_filter.data_combo_box
         )
-        self._checker_filter.switch_filter_input()
 
         self.construct_class.fill_combo_box(
             user_settings.sortament_list, self._gauge_filter.data_combo_box
         )
-        self._gauge_filter.switch_filter_input()
 
         self._add_water_mark_check_box.setChecked(user_settings.add_default_watermark)
-        self._switch_watermark_group()
         self._set_user_watermark_path()
 
         self._split_files_by_size_checkbox.setChecked(user_settings.split_file_by_size)
@@ -419,7 +436,7 @@ class SettingsWindow(QtWidgets.QDialog):
             if filename := request_user_file():
                 self._custom_watermark_path_edit_line.setText(filename)
 
-    def _select_auto_folder(self, auto_save_folder):
+    def _select_auto_folder(self, auto_save_folder: bool):
         if auto_save_folder:
             self._auto_choose_save_folder_radio_button.setChecked(True)
         else:
