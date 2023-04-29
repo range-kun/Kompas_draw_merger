@@ -432,23 +432,27 @@ class OboznSearcher:
         registered_obozn: list[DrawObozn] = []
         correct_lines = self._get_all_lines_with_correct_type([ObjectType.REGULAR_LINE, 2])
 
+        def is_quantity_cell_has_data():
+            for column_number in column_numbers:
+                if self._get_cell_data(line, (6, column_number, 0)):
+                    return True
+            return False
+
         for line in correct_lines:
             draw_obozn, draw_name, size = self._get_line_obozn_name_size(line)
             if not draw_obozn or draw_obozn in registered_obozn:
                 continue
+            if not is_quantity_cell_has_data():
+                continue
+            registered_obozn.append(draw_obozn)
 
             line_section = self.kompas_api.get_line_section(line)
             if line_section == DrawType.ASSEMBLY_DRAW:
                 self.assembly_draws.append(DrawData(draw_obozn=draw_obozn, draw_name=draw_name))
                 if self.without_sub_assembles:
                     break
-                registered_obozn.append(draw_obozn)
 
-            for column_number in column_numbers:
-                if not self._get_cell_data(line, (6, column_number, 0)):
-                    continue
-                registered_obozn.append(draw_obozn)
-                self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
+            self._parse_lines_for_detail_and_spec(draw_obozn, draw_name, size, line_section)
 
         return self._create_spec_output(), self.errors
 

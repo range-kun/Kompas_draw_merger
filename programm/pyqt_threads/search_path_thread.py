@@ -321,13 +321,13 @@ class SearchPathsThread(QThread):
         self,
         section_spec_data_list: list[SpecSectionData],
         spec_path: FilePath,
-    ) -> tuple[set, list] | None:
+    ) -> tuple[list[FilePath], list] | None:
         def set_file_extension():
             if section_spec_data.draw_type == schemas.DrawType.SPEC_DRAW:
                 return '.spw'
             return '.cdw'
 
-        unique_cdw_paths = set()
+        unique_cdw_paths = []
         spw_data_list = []
         for section_spec_data in section_spec_data_list:
             for draw_data in section_spec_data.list_draw_data:
@@ -346,6 +346,7 @@ class SearchPathsThread(QThread):
                     inner_section_spec_data, _ = response
                     spw_data_list.append([file_path, inner_section_spec_data])
                 else:
-                    unique_cdw_paths.add(file_path)
+                    if file_path not in unique_cdw_paths:
+                        unique_cdw_paths.append(file_path)
         if unique_cdw_paths or spw_data_list:
             return unique_cdw_paths, spw_data_list
