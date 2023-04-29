@@ -61,7 +61,7 @@ class MergerFolderData:
         self._single_draw_dir_name = "Однодетальные"
 
         self._today_date = get_today_date()
-        self._core_dir = rf"{directory_to_save or self._path_to_search}\pdf"
+        self._core_dir = rf"{directory_to_save or self._path_to_search}\PDF"
 
         self._main_draw_name = self._fetch_main_draw_name()
         self.single_draw_dir = self._fetch_single_draw_dir()
