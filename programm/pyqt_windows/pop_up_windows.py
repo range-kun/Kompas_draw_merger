@@ -38,10 +38,6 @@ class SettingsWindow(QtWidgets.QDialog):
         self.construct_class = WidgetBuilder()
         self.style_class = WidgetStyles()
 
-        self._arial_12_font = self.style_class.arial_12_font
-        self._arial_11_font = self.style_class.arial_11_font
-        self._arial_ms_shell_12_font = self.style_class.ms_shell_12_font
-
         self._date_policy = self.style_class.date_policy
         self._filter_policy = self.style_class.filter_policy
         self._check_box_policy = self.style_class.size_policy_button_2
@@ -118,7 +114,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
     def _setup_filter_by_date_section(self):
         self._filter_by_date_check_box = self.construct_class.make_checkbox(
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             text="C датой в указанном диапазоне: от и до",
             command=self._switch_date_input_filter,
             parent=self.grid_layout_widget,
@@ -130,12 +126,12 @@ class SettingsWindow(QtWidgets.QDialog):
         self.grid_layout.addWidget(self._filter_by_date_check_box, 1, 0, 1, 1)
 
         self._first_date_input = self.construct_class.make_date(
-            font=self._arial_12_font, parent=self.grid_layout_widget
+            font=self.style_class.arial_12_font, parent=self.grid_layout_widget
         )
         self.grid_layout.addWidget(self._first_date_input, 1, 2, 1, 1)
 
         self._last_date_input = self.construct_class.make_date(
-            font=self._arial_12_font, parent=self.grid_layout_widget
+            font=self.style_class.arial_12_font, parent=self.grid_layout_widget
         )
         self.grid_layout.addWidget(self._last_date_input, 1, 1, 1, 1)
 
@@ -196,7 +192,7 @@ class SettingsWindow(QtWidgets.QDialog):
     def _setup_watermark_section(self):
         self._add_water_mark_check_box = self.construct_class.make_checkbox(
             text="Добавить водяной знак",
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             parent=self.grid_layout_widget,
             command=self._switch_watermark_group,
         )
@@ -204,7 +200,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
         self._default_watermark_path_radio_button = self.construct_class.make_radio_button(
             text=DEFAULT_WATERMARK_LABEL,
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             parent=self.grid_layout_widget,
             command=self._watermark_path_radio_option,
         )
@@ -212,14 +208,14 @@ class SettingsWindow(QtWidgets.QDialog):
 
         self._custom_watermark_path_radio_button = self.construct_class.make_radio_button(
             text="Свое изображение",
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             parent=self.grid_layout_widget,
             command=self._watermark_path_radio_option,
         )
         self.grid_layout.addWidget(self._custom_watermark_path_radio_button, 9, 2, 1, 1)
 
         self._custom_watermark_path_edit_line = self.construct_class.make_line_edit(
-            parent=self.grid_layout_widget, font=self._arial_11_font
+            parent=self.grid_layout_widget, font=self.style_class.arial_11_font
         )
         self.grid_layout.addWidget(self._custom_watermark_path_edit_line, 10, 1, 1, 2)
 
@@ -230,7 +226,7 @@ class SettingsWindow(QtWidgets.QDialog):
     def _setup_additional_settings(self):
         self._split_files_by_size_checkbox = self.construct_class.make_checkbox(
             text="Разбить на файлы по размерам",
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             parent=self.grid_layout_widget,
         )
         self._split_files_by_size_checkbox.setToolTip(
@@ -240,7 +236,7 @@ class SettingsWindow(QtWidgets.QDialog):
 
         self._remove_duplicates_checkbox = self.construct_class.make_checkbox(
             text="Удалить повторяющиеся чертежи",
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             parent=self.grid_layout_widget,
         )
         self._remove_duplicates_checkbox.setToolTip(
@@ -251,14 +247,14 @@ class SettingsWindow(QtWidgets.QDialog):
     def _setup_save_file_path_section(self):
         self._manually_choose_save_folder_radio_button = self.construct_class.make_radio_button(
             text="Указать папку сохранения вручную",
-            font=self._arial_ms_shell_12_font,
+            font=self.style_class.ms_shell_12_font,
             parent=self.grid_layout_widget,
         )
         self.grid_layout.addWidget(self._manually_choose_save_folder_radio_button, 12, 0, 1, 1)
 
         self._auto_choose_save_folder_radio_button = self.construct_class.make_radio_button(
             text="Выбрать папку автоматически",
-            font=self._arial_ms_shell_12_font,
+            font=self.style_class.ms_shell_12_font,
             parent=self.grid_layout_widget,
         )
         self.grid_layout.addWidget(self._auto_choose_save_folder_radio_button, 12, 1, 1, 3)
@@ -270,19 +266,19 @@ class SettingsWindow(QtWidgets.QDialog):
     def _setup_exclude_folders_section(self):
         exclude_folder_label = self.construct_class.make_label(
             text="Исключить следующие папки при поиске чертежей:",
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             parent=self.grid_layout_widget,
         )
         self.grid_layout.addWidget(exclude_folder_label, 13, 0, 1, 3)
 
         self._exclude_folder_list_widget = ExcludeFolderListWidget(self.grid_layout_widget)
-        self._exclude_folder_list_widget.setFont(self._arial_12_font)
+        self._exclude_folder_list_widget.setFont(self.style_class.arial_12_font)
         self.grid_layout.addWidget(self._exclude_folder_list_widget, 14, 0, 2, 2)
 
         add_exclude_folder_button = self.construct_class.make_button(
             text="Добавить папку",
             parent=self.grid_layout_widget,
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             size_policy=self._date_policy,
             command=self._exclude_folder_list_widget.add_folder,
         )
@@ -291,7 +287,7 @@ class SettingsWindow(QtWidgets.QDialog):
         delete_exclude_folder_button = self.construct_class.make_button(
             text="Удалить выбранную\n папку",
             parent=self.grid_layout_widget,
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             size_policy=self._date_policy,
             command=self._exclude_folder_list_widget.remove_item,
         )
@@ -301,7 +297,7 @@ class SettingsWindow(QtWidgets.QDialog):
         reset_settings_button = self.construct_class.make_button(
             text="Сбросить настройки",
             parent=self.grid_layout_widget,
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             command=self._set_default_settings,
         )
         self.grid_layout.addWidget(reset_settings_button, 16, 1, 1, 3)
@@ -309,7 +305,7 @@ class SettingsWindow(QtWidgets.QDialog):
         self._close_window_button = self.construct_class.make_button(
             text="Ок",
             parent=self.grid_layout_widget,
-            font=self._arial_12_font,
+            font=self.style_class.arial_12_font,
             command=self.close,
         )
         self.grid_layout.addWidget(self._close_window_button, 16, 0, 1, 1)
@@ -570,14 +566,12 @@ class RadioButtonsWindow(QtWidgets.QDialog):
     def __init__(self, executions: list[DrawExecution]):
         QtWidgets.QDialog.__init__(self)
         self.construct_class = WidgetBuilder()
-        style_class = WidgetStyles()
+        self.style_class = WidgetStyles()
 
         self.executions = executions
         self.layout = QtWidgets.QGridLayout()
         self.setLayout(self.layout)
         self.setWindowTitle("Вы указали групповую спецификацию")
-
-        self._arial_12_font = style_class.arial_12_font
 
         self._set_label()
         self._set_options()
@@ -599,7 +593,7 @@ class RadioButtonsWindow(QtWidgets.QDialog):
 
     def _set_label(self):
         plain_text = QtWidgets.QLabel("Выберите исполнение для слияния:")
-        plain_text.setFont(self._arial_12_font)
+        plain_text.setFont(self.style_class.arial_12_font)
         self.layout.addWidget(plain_text, 0, 0, 1, 3)
 
     def _set_options(self):
@@ -609,19 +603,19 @@ class RadioButtonsWindow(QtWidgets.QDialog):
             radiobutton = QtWidgets.QRadioButton(option)
             radiobutton.option = option
             radiobutton.toggled.connect(self.on_radio_clicked)
-            radiobutton.setFont(self._arial_12_font)
+            radiobutton.setFont(self.style_class.arial_12_font)
             self.layout.addWidget(radiobutton, 2, index)
 
     def _add_buttons(self):
         button_layout = QtWidgets.QHBoxLayout()
 
         ok_button = QtWidgets.QPushButton("OК")
-        ok_button.setFont(self._arial_12_font)
+        ok_button.setFont(self.style_class.arial_12_font)
         ok_button.clicked.connect(self.on_button_clicked)
         button_layout.addWidget(ok_button)
 
         cancel_button = QtWidgets.QPushButton("Отмена")
-        cancel_button.setFont(self._arial_12_font)
+        cancel_button.setFont(self.style_class.arial_12_font)
         cancel_button.clicked.connect(self.on_button_clicked)
         button_layout.addWidget(cancel_button)
 
