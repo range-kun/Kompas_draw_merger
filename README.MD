@@ -1,6 +1,6 @@
 <h2 align="center" style="color:#1589F0"> Kompas Конвертер </h2>
 
-<h2 align="center">![logo.png](https://raw.githubusercontent.com/range-kun/Kompas_draw_merger/master/img/logo.png)</h2>
+<h2 align="center">![logo.png](./img/logo.png)</h2>
 
 ### Что это
 Программа для работы с чертежами и спецификациям программы Kompas фирмы Ascon.
