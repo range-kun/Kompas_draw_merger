@@ -313,9 +313,11 @@ class OboznSearcher:
     def _get_all_lines_with_correct_type(self, correct_line_type: list[int]) -> list:
         return [line for line in self.spc_description if line.ObjectType in correct_line_type]
 
-    @staticmethod
-    def _get_cell_data(line, cell_coordinates: tuple[int, int, int]) -> str:
-        return line.Columns.Column(*cell_coordinates).Text.Str.strip()
+    def _get_cell_data(self, line, cell_coordinates: tuple[int, int, int]) -> str:
+        i_text = self.kompas_api.kompas_api7_module.IText(
+            line.Columns.Column(*cell_coordinates).Text
+        )
+        return i_text.Str.strip()
 
     def _verify_column_not_empty(self, column_number: int) -> bool:
         for spc_line in self.spc_description:

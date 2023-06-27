@@ -1,3 +1,4 @@
+import webbrowser
 from pathlib import Path
 from typing import Callable
 
@@ -16,13 +17,12 @@ class MainWindow(WidgetBuilder):
 
     def __init__(self):
         WidgetBuilder.__init__(self, parent=None)
-        self.setFixedSize(929, 646)
+        self.setFixedSize(930, 646)
         self.setWindowTitle("Конвертер")
 
         self.settings_window = SettingsWindow()
         self.settings_window_data = self.settings_window.collect_settings_window_info()
         self.style_class = WidgetStyles()
-
         self.setup_ui()
 
     def keyPressEvent(self, event):
@@ -198,9 +198,19 @@ class MainWindow(WidgetBuilder):
         self.delete_list_widget_item.setIconSize(QtCore.QSize(50, 50))
         self.delete_list_widget_item.setToolTip("Удалить выбранный чертеж/чертежи из списка")
 
+        self.help_button = self.make_button(
+            text="\n\n",
+            size_policy=self.style_class.size_policy_button_2,
+            command=lambda: webbrowser.open('https://youtu.be/L_o0YrXBaFo'),
+        )
+        self.help_button.setIcon(QtGui.QIcon(str(self.IMAGE_PATH / "info.png")))
+        self.help_button.setIconSize(QtCore.QSize(50, 50))
+        self.help_button.setToolTip("Ссылка на справочное видео")
+
         vertical_layout.addWidget(self.move_line_up_button)
         vertical_layout.addWidget(self.move_line_down_button)
         vertical_layout.addWidget(self.delete_list_widget_item)
+        vertical_layout.addWidget(self.help_button)
 
     def setup_lower_list_buttons(self):
         self.select_all_button = self.make_button(
