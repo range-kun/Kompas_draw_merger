@@ -1,6 +1,6 @@
 <h2 align="center" style="color:#1589F0"> Kompas Конвертер </h2>
 
-<h2 align="center">![logo.png](https://raw.githubusercontent.com/range-kun/Kompas_draw_merger/master/img/logo.png)</h2>
+<h2 align="center"><img src="https://raw.githubusercontent.com/range-kun/Kompas_draw_merger/master/img/logo.png" /></h2>
 
 ### Что это
 Программа для работы с чертежами и спецификациям программы Kompas фирмы Ascon.
@@ -21,7 +21,7 @@
 
 ### Как работает
 Для ознакомления имеется обучающие видео где подробно рассмотрена работа с данной программой
-[![Kompas Konverter](https://i.imgur.com/rW3vxOz.png)](https://www.youtube.com/watch?v=L_o0YrXBaFo&lc=UgyYi5aTZ89lFSYcEo14AaABAg "Everything Is AWESOME")
+[![Kompas Konverter](https://i.imgur.com/rW3vxOz.png)](https://www.youtube.com/watch?v=L_o0YrXBaFo&lc=UgyYi5aTZ89lFSYcEo14AaABAg )
 
 ### Где скачать
 Программа абсолютно бесплатна, для использования достаточно [скачать и распаковать архив c программой](https://disk.yandex.ru/d/GszPcW77Hj9H5w).<br/>
